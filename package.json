@@ -1,0 +1,25 @@
+{
+  "name": "wc-analytics-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build":            "npm run build --prefix admin-ui",
+    "dev":              "npm run dev   --prefix admin-ui",
+
+    "env:start":        "wp-env start",
+    "env:stop":         "wp-env stop",
+    "env:clean":        "wp-env clean",
+    "env:logs":         "wp-env logs",
+    "env:shell":        "wp-env run tests-wordpress bash",
+
+    "test":             "npm run test:unit && npm run test:integration",
+    "test:unit":        "composer run test:unit",
+    "test:integration": "wp-env run tests-cli vendor/bin/phpunit --testsuite integration",
+
+    "lint:js":          "npm run lint   --prefix admin-ui",
+    "lint:php":         "composer exec -- phpcs src tests --standard=WordPress --extensions=php"
+  },
+  "devDependencies": {
+    "@wordpress/env": "^10.12.0"
+  }
+}

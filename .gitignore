@@ -1,0 +1,18 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Composer & PHP
+/vendor/
+.phpunit.cache/
+.phpunit.result.cache
+
+# Node & Admin UI build artifacts
+admin-ui/node_modules/
+admin-ui/build/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
