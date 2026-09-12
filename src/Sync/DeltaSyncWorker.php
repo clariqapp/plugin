@@ -89,7 +89,7 @@ final class DeltaSyncWorker {
      * Action Scheduler callback — runs the delta sync, then schedules next day's run.
      */
     public static function run(): void {
-        if (get_option('wc_mcp_connection_mode', 'cloud_sync') !== 'cloud_sync') {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
             return;
         }
 

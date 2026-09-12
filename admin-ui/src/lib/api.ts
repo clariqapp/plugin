@@ -54,3 +54,15 @@ export async function syncNow(): Promise<void> {
     method: 'POST',
   });
 }
+
+export interface RotateSecretResponse {
+  success:       boolean;
+  bridge_secret: string;
+}
+
+export async function rotateBridgeSecret(): Promise<RotateSecretResponse> {
+  return apiFetch({
+    url:    `${base}bridge/rotate-secret`,
+    method: 'POST',
+  });
+}

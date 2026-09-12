@@ -1,0 +1,21 @@
+# Gitleaks configuration for the Clariq WooCommerce plugin.
+# Run: gitleaks detect --source . --redact -v
+
+title = "wc-analytics-mcp gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlists"
+paths = [
+  '''\.env\.example$''',
+  '''tests/''',
+  '''vendor/''',
+  '''admin-ui/node_modules/''',
+  '''admin-ui/build/''',
+]
+regexes = [
+  '''your-[a-z-]+''',
+  '''YOUR_[A-Z_]+''',
+]

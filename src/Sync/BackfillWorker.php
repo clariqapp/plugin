@@ -49,7 +49,7 @@ final class BackfillWorker {
      * Action Scheduler callback: processes one page of orders and schedules the next.
      */
     public static function process_batch(): void {
-        if (get_option('wc_mcp_connection_mode', 'cloud_sync') !== 'cloud_sync') {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
             return; // Local Bridge does not need warehouse sync.
         }
 

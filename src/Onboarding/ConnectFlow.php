@@ -51,7 +51,7 @@ final class ConnectFlow {
             'store_url'       => home_url(),
             'state'           => $state,
             'callback'        => $callback,
-            'connection_mode' => get_option('wc_mcp_connection_mode', 'cloud_sync'),
+            'connection_mode' => get_option('wc_mcp_connection_mode', 'local_bridge'),
         ], WC_MCP_CLARIQ_URL . '/connect');
 
         return new \WP_REST_Response(['redirect_url' => $connect_url], 200);
@@ -108,7 +108,7 @@ final class ConnectFlow {
         // Kick off a fresh historical backfill and schedule the daily delta sync.
         // Only applicable for Cloud Sync mode — Local Bridge queries data live
         // and never pushes anything to the cloud.
-        if (get_option('wc_mcp_connection_mode', 'cloud_sync') === 'cloud_sync') {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') === 'cloud_sync') {
             \Clariq\McpPlugin\Sync\BackfillWorker::maybe_schedule_backfill();
             \Clariq\McpPlugin\Sync\DeltaSyncWorker::maybe_schedule();
         }

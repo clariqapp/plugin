@@ -41,7 +41,7 @@ final class RestEndpoint {
      */
     public function check_permission(\WP_REST_Request $request): bool|\WP_Error {
         // Bridge is disabled when cloud_sync is the active mode.
-        if (get_option('wc_mcp_connection_mode', 'cloud_sync') !== 'local_bridge') {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'local_bridge') {
             return new \WP_Error(
                 'mcp_bridge_disabled',
                 'The on-premise bridge is not enabled for this site.',
@@ -90,7 +90,7 @@ final class RestEndpoint {
         return new \WP_REST_Response([
             'status'    => 'ok',
             'tenant_id' => get_option('wc_mcp_tenant_id', ''),
-            'mode'      => get_option('wc_mcp_connection_mode', 'cloud_sync'),
+            'mode'      => get_option('wc_mcp_connection_mode', 'local_bridge'),
             'version'   => WC_MCP_VERSION,
         ]);
     }

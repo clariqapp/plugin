@@ -6,6 +6,7 @@ namespace Clariq\McpPlugin;
 
 use Clariq\McpPlugin\Admin\SettingsPage;
 use Clariq\McpPlugin\Bridge\RestEndpoint;
+use Clariq\McpPlugin\Security\BridgeKeyManager;
 use Clariq\McpPlugin\Sync\BackfillWorker;
 use Clariq\McpPlugin\Sync\DeltaSyncWorker;
 use Clariq\McpPlugin\Sync\WebhookDispatcher;
@@ -55,6 +56,11 @@ final class Plugin {
         if (class_exists('ActionScheduler')) {
             \ActionScheduler::store();
         }
+
+        // Local bridge is the default mode for fresh installs — make sure a
+        // bridge secret exists so the self-hosted path works out of the box,
+        // with no Clariq account required.
+        BridgeKeyManager::ensure_secret();
 
         // Note: site registration now happens via browser-based connect flow.
         // See ConnectFlow::initiate() triggered from the admin UI.

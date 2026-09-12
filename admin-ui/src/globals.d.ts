@@ -7,6 +7,8 @@ export interface WcMcpData {
   nonce:               string;
   forceSyncNonce:      string;
   tenantId:            string;
+  bridgeSecret:        string;
+  bridgeUrl:           string;
   mode:                'cloud_sync' | 'local_bridge';
   backfillRange:       string;
   syncHour:            number;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from '@wordpress/element';
 import { ConnectionModeToggle } from './components/ConnectionModeToggle';
 import { ConnectionPanel }      from './components/ConnectionPanel';
+import { BridgeSetupPanel }     from './components/BridgeSetupPanel';
 import { SyncControls }         from './components/SyncControls';
 import { HealthStatus }         from './components/HealthStatus';
 import { saveSettings, ConnectionMode } from './lib/api';
@@ -97,6 +98,14 @@ export function App() {
           disabled={saving}
           locked={isConnected}
         />
+
+        {/* Local bridge self-hosted setup — no account needed */}
+        {mode === 'local_bridge' && !isConnected && (
+          <>
+            <div className="mcp-divider" />
+            <BridgeSetupPanel />
+          </>
+        )}
 
         <div className="mcp-divider" />
 

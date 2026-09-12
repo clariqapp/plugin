@@ -67,8 +67,14 @@ final class SettingsPage {
             $asset['version']
         );
 
+        // Ensure a bridge secret exists for upgraded installs that predate
+        // the local-bridge-first default (fresh installs get one on activation).
+        $bridge_secret = \Clariq\McpPlugin\Security\BridgeKeyManager::ensure_secret();
+
         // Pass runtime data to JS.
         wp_localize_script('wc-mcp-admin', 'wcMcpData', [
+            'bridgeSecret'        => $bridge_secret,
+            'bridgeUrl'           => rest_url('mcp-bridge/v1/'),
             'ajaxUrl'             => admin_url('admin-ajax.php'),
             'restUrl'             => rest_url('wc-mcp/v1/'),
             'nonce'               => wp_create_nonce('wp_rest'),
@@ -77,7 +83,7 @@ final class SettingsPage {
             'isConnected'         => (bool) get_option('wc_mcp_tenant_id', ''),
             'siteUrl'             => home_url(),
             'clariqUrl'           => WC_MCP_CLARIQ_URL,
-            'mode'                => get_option('wc_mcp_connection_mode', 'cloud_sync'),
+            'mode'                => get_option('wc_mcp_connection_mode', 'local_bridge'),
             'backfillRange'       => get_option('wc_mcp_backfill_range', '12'),
             'syncHour'            => (int) get_option('wc_mcp_sync_hour', 2),
             'backfillStatus'      => self::get_backfill_status(),
@@ -129,6 +135,15 @@ final class SettingsPage {
         register_rest_route('wc-mcp/v1', '/sync-now', [
             'methods'             => \WP_REST_Server::CREATABLE,
             'callback'            => [$this, 'handle_sync_now'],
+            'permission_callback' => function () {
+                return current_user_can('manage_woocommerce');
+            },
+        ]);
+
+        // Rotate the local bridge secret (invalidates any configured MCP clients).
+        register_rest_route('wc-mcp/v1', '/bridge/rotate-secret', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_rotate_secret'],
             'permission_callback' => function () {
                 return current_user_can('manage_woocommerce');
             },
@@ -236,6 +251,20 @@ final class SettingsPage {
         return new \WP_REST_Response(['success' => true]);
     }
 
+    /**
+     * REST: POST /wc-mcp/v1/bridge/rotate-secret
+     * Generates a new local bridge secret and returns it so the admin UI can
+     * display it once. Any previously configured MCP clients must be updated.
+     */
+    public function handle_rotate_secret(\WP_REST_Request $request): \WP_REST_Response {
+        $secret = \Clariq\McpPlugin\Security\BridgeKeyManager::rotate();
+
+        return new \WP_REST_Response([
+            'success'       => true,
+            'bridge_secret' => $secret,
+        ]);
+    }
+
     public function handle_force_sync(): void {
         check_ajax_referer('wc_mcp_force_sync_nonce', 'nonce');
 
@@ -330,7 +359,7 @@ final class SettingsPage {
      * Enqueues an immediate delta sync (orders since last sync only).
      */
     public function handle_sync_now(\WP_REST_Request $request): \WP_REST_Response {
-        if (get_option('wc_mcp_connection_mode', 'cloud_sync') !== 'cloud_sync') {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
             return new \WP_REST_Response([
                 'success' => false,
                 'message' => 'Sync Now is only available in Cloud Sync mode.',

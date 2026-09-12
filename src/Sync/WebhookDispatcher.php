@@ -69,7 +69,7 @@ final class WebhookDispatcher {
      * @return array<string, mixed>|null  Decoded API response body, or null on total failure.
      */
     public function dispatch_batch(array $orders, int $cursor = 0, string $event = 'backfill_batch', ?int $backfill_total = null): ?array {
-        if (get_option('wc_mcp_connection_mode', 'cloud_sync') !== 'cloud_sync') {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
             return null;
         }
 
@@ -172,7 +172,7 @@ final class WebhookDispatcher {
         ?\WC_Order $order = null,
         ?array $extra = null
     ): void {
-        if (get_option('wc_mcp_connection_mode', 'cloud_sync') !== 'cloud_sync') {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
             return;
         }
 

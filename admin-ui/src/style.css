@@ -493,3 +493,75 @@
   .mcp-sync-row   { flex-direction: column; align-items: stretch; }
   .mcp-card       { padding: 20px 16px; }
 }
+
+/* ---------- Local Bridge Setup Panel ---------- */
+
+.mcp-copy-btn {
+  background: none;
+  border: 1px solid var(--mcp-border);
+  border-radius: var(--mcp-radius-sm);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mcp-text-2);
+  cursor: pointer;
+  transition: var(--mcp-transition);
+  white-space: nowrap;
+}
+
+.mcp-copy-btn:hover:not(:disabled) {
+  border-color: var(--mcp-primary);
+  color: var(--mcp-primary);
+}
+
+.mcp-copy-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.mcp-copy-btn--danger:hover:not(:disabled) {
+  border-color: var(--mcp-red);
+  color: var(--mcp-red);
+}
+
+.mcp-code-block {
+  margin: 0;
+  padding: 12px 14px;
+  background: #1E293B;
+  color: #E2E8F0;
+  border-radius: 0 0 var(--mcp-radius-md) var(--mcp-radius-md);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.mcp-code-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: #0F172A;
+  border-radius: var(--mcp-radius-md) var(--mcp-radius-md) 0 0;
+  color: #94A3B8;
+  font-family: 'SFMono-Regular', Consolas, Menlo, monospace;
+  font-size: 11px;
+}
+
+.mcp-code-block__header .mcp-copy-btn {
+  border-color: #334155;
+  color: #94A3B8;
+}
+
+.mcp-code-block__header .mcp-copy-btn:hover:not(:disabled) {
+  border-color: var(--mcp-primary);
+  color: #C4B5FD;
+}
+
+.mcp-bridge-test {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.mcp-bridge-test .mcp-inline-msg { margin: 0; }

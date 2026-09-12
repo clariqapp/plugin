@@ -269,6 +269,9 @@ class WebhookDispatcherTest extends TestCase {
         Functions\when('get_option')->alias(function(string $k, mixed $d = false) {
             if ($k === 'wc_mcp_tenant_id') return 't1';
             if ($k === 'wc_mcp_auth_token') return 'a1';
+            // Cloud sync only fires in cloud_sync mode (the default for fresh
+            // installs is now local_bridge) — simulate a connected cloud store.
+            if ($k === 'wc_mcp_connection_mode') return 'cloud_sync';
             return $d;
         });
         Functions\when('wp_json_encode')->alias(function(mixed $d) { return json_encode($d); });

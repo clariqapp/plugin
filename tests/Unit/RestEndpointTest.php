@@ -11,6 +11,13 @@ use WP_REST_Request;
 use WP_REST_Response;
 use WP_Error;
 
+/**
+ * NOTE: This class uses Mockery 'overload' mocks (overload:ToolRouter),
+ * which permanently replace the target class in the PHP process. Run in a
+ * separate process so the overload does not leak into ToolRouterTest and
+ * break the real class with "mockery_getExpectations() on null" errors.
+ */
+#[\PHPUnit\Framework\Attributes\RunClassInSeparateProcess]
 final class RestEndpointTest extends \Clariq\McpPlugin\Tests\TestCase {
 
     private RestEndpoint $endpoint;
