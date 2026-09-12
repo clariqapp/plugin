@@ -46,7 +46,7 @@ final class DeltaSyncWorker {
      *
      * @param int|null $hour Hour of day in site timezone (0–23). Null = read from wp_options.
      */
-    public static function maybe_schedule(int $hour = null): void {
+    public static function maybe_schedule(?int $hour = null): void {
         if (!function_exists('as_has_scheduled_action')) {
             return;
         }
