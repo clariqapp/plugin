@@ -1,6 +1,6 @@
 # Clariq WooCommerce Plugin
 
-WordPress plugin connecting WooCommerce stores to [Clariq](https://clariq.com) analytics and LLM tools via the Model Context Protocol (MCP).
+WordPress plugin connecting WooCommerce stores to [Clariq](https://clariqapp.com) analytics and LLM tools via the Model Context Protocol (MCP).
 
 ## Features
 

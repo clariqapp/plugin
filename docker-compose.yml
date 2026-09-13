@@ -33,8 +33,6 @@ services:
         define('WP_DEBUG_LOG', true);
         define('WP_DEBUG_DISPLAY', false);
         define('SCRIPT_DEBUG', true);
-        define('WC_MCP_CLARIQ_URL', 'https://clariq-dashboard.vercel.app');
-        define('WC_MCP_CLARIQ_INTERNAL_URL', 'https://clariqdevcom.vercel.app');
         define('WC_MCP_CLARIQ_SIGNING_KEY', '${WC_MCP_CLARIQ_SIGNING_KEY:-}');
     volumes:
       - wp_data:/var/www/html
@@ -56,8 +54,6 @@ services:
         define('WP_DEBUG_LOG', true);
         define('WP_DEBUG_DISPLAY', false);
         define('SCRIPT_DEBUG', true);
-        define('WC_MCP_CLARIQ_URL', 'https://clariq-dashboard.vercel.app');
-        define('WC_MCP_CLARIQ_INTERNAL_URL', 'https://clariqdevcom.vercel.app');
         define('WC_MCP_CLARIQ_SIGNING_KEY', '${WC_MCP_CLARIQ_SIGNING_KEY:-}');
     volumes:
       - wp_data:/var/www/html

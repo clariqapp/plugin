@@ -40,10 +40,10 @@ export function ConnectionPanel({ onDisconnect, currentMode, isConnected }: Prop
 
   const displayUrl = (() => {
     try {
-      const url = new URL(clariqUrl || 'https://app.clariq.com');
+      const url = new URL(clariqUrl || 'https://app.clariqapp.com');
       return url.host;
     } catch {
-      return (clariqUrl || 'app.clariq.com').replace(/^https?:\/\//, '');
+      return (clariqUrl || 'app.clariqapp.com').replace(/^https?:\/\//, '');
     }
   })();
 
