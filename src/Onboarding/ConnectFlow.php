@@ -52,7 +52,7 @@ final class ConnectFlow {
             'state'           => $state,
             'callback'        => $callback,
             'connection_mode' => get_option('wc_mcp_connection_mode', 'local_bridge'),
-        ], WC_MCP_CLARIQ_URL . '/connect');
+        ], \Clariq\McpPlugin\Admin\SettingsPage::resolved_clariq_url() . '/connect');
 
         return new \WP_REST_Response(['redirect_url' => $connect_url], 200);
     }

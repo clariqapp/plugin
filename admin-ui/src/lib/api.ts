@@ -67,3 +67,22 @@ export async function rotateBridgeSecret(): Promise<RotateSecretResponse> {
     method: 'POST',
   });
 }
+
+export interface ConnectCheckResponse {
+  reachable: boolean;
+  target:    string;
+  http_code?: number;
+  error?:     string;
+}
+
+export async function checkClariqCloud(): Promise<ConnectCheckResponse> {
+  return apiFetch({ url: `${base}connect/check` });
+}
+
+export async function saveClariqUrl(url: string): Promise<void> {
+  await apiFetch({
+    url:    `${base}settings`,
+    method: 'POST',
+    data:   { clariq_url: url },
+  });
+}

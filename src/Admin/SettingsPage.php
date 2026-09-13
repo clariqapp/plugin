@@ -82,7 +82,7 @@ final class SettingsPage {
             'tenantId'            => get_option('wc_mcp_tenant_id', ''),
             'isConnected'         => (bool) get_option('wc_mcp_tenant_id', ''),
             'siteUrl'             => home_url(),
-            'clariqUrl'           => WC_MCP_CLARIQ_URL,
+            'clariqUrl'           => self::resolved_clariq_url(),
             'mode'                => get_option('wc_mcp_connection_mode', 'local_bridge'),
             'backfillRange'       => get_option('wc_mcp_backfill_range', '12'),
             'syncHour'            => (int) get_option('wc_mcp_sync_hour', 2),
@@ -251,7 +251,54 @@ final class SettingsPage {
             \Clariq\McpPlugin\Sync\DeltaSyncWorker::reschedule($hour);
         }
 
+        // Advanced: Clariq Cloud URL override (staging/local testing without wp-config).
+        if ($request->has_param('clariq_url')) {
+            $raw = trim((string) $request->get_param('clariq_url'));
+            if ($raw === '') {
+                delete_option('wc_mcp_clariq_url_override');
+            } else {
+                $parts = wp_parse_url($raw);
+                if (!$parts || empty($parts['host']) || !in_array($parts['scheme'] ?? '', ['http', 'https'], true)) {
+                    return new \WP_REST_Response([
+                        'success' => false,
+                        'message' => 'Invalid URL — must start with http:// or https://.',
+                    ], 400);
+                }
+                update_option('wc_mcp_clariq_url_override', untrailingslashit(esc_url_raw($raw)));
+            }
+        }
+
         return new \WP_REST_Response(['success' => true]);
+    }
+
+    /**
+     * Resolved Clariq Cloud URL: admin override option wins, else the constant.
+     */
+    public static function resolved_clariq_url(): string {
+        $override = get_option('wc_mcp_clariq_url_override', '');
+        return $override ? untrailingslashit((string) $override) : WC_MCP_CLARIQ_URL;
+    }
+
+    /**
+     * REST: GET /wc-mcp/v1/connect/check
+     * Probes the resolved Clariq Cloud URL reachability so the admin gets a
+     * clear DNS/HTTP diagnosis instead of a silent failed redirect.
+     */
+    public function handle_connect_check(\WP_REST_Request $request): \WP_REST_Response {
+        $target = self::resolved_clariq_url() . '/login';
+        $response = wp_remote_get($target, ['timeout' => 6, 'redirection' => 3]);
+        if (is_wp_error($response)) {
+            return new \WP_REST_Response([
+                'reachable' => false,
+                'target'    => $target,
+                'error'     => $response->get_error_message(),
+            ]);
+        }
+        return new \WP_REST_Response([
+            'reachable' => true,
+            'target'    => $target,
+            'http_code' => (int) wp_remote_retrieve_response_code($response),
+        ]);
     }
 
     /**
@@ -303,6 +350,15 @@ final class SettingsPage {
         register_rest_route('wc-mcp/v1', '/connect/disconnect', [
             'methods'             => \WP_REST_Server::DELETABLE,
             'callback'            => [$this, 'handle_disconnect'],
+            'permission_callback' => function () {
+                return current_user_can('manage_woocommerce');
+            },
+        ]);
+
+        // Reachability probe for the resolved Clariq Cloud URL.
+        register_rest_route('wc-mcp/v1', '/connect/check', [
+            'methods'             => \WP_REST_Server::READABLE,
+            'callback'            => [$this, 'handle_connect_check'],
             'permission_callback' => function () {
                 return current_user_can('manage_woocommerce');
             },

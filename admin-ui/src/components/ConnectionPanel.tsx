@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from '@wordpress/element';
-import { initiateConnect, disconnect, ConnectionMode } from '../lib/api';
+import { initiateConnect, disconnect, checkClariqCloud, saveClariqUrl, ConnectionMode } from '../lib/api';
 
 interface Props {
   onDisconnect:  () => void;
@@ -7,19 +7,36 @@ interface Props {
   isConnected:   boolean;
 }
 
+/** Human-readable messages for the connect_error codes the callback redirects back with. */
+const CONNECT_ERROR_MESSAGES: Record<string, string> = {
+  invalid_state:      'Connection attempt expired or was replayed. Please click Connect again.',
+  missing_params:     'The connection response was incomplete. Please try again.',
+  signing_key_missing:'This site is missing its signing key (WC_MCP_CLARIQ_SIGNING_KEY). Contact your administrator.',
+  invalid_signature:  'The connection response failed signature verification. Please try again — if it persists, verify the signing key matches your Clariq account.',
+};
+
 export function ConnectionPanel({ onDisconnect, currentMode, isConnected }: Props) {
   const {
     tenantId,
     siteUrl,
     clariqUrl,
-    connectError: initialError,
+    connectError: initialErrorCode,
     justConnected,
   } = window.wcMcpData;
 
   const [connecting,    setConnecting]    = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  const [error,         setError]         = useState<string>(initialError ?? '');
+  const [error,         setError]         = useState<string>(
+    initialErrorCode ? (CONNECT_ERROR_MESSAGES[initialErrorCode] ?? `Connection failed (${initialErrorCode}).`) : ''
+  );
   const [showSuccess,   setShowSuccess]   = useState(justConnected);
+
+  // Advanced: cloud URL override + reachability check
+  const [showAdvanced,  setShowAdvanced]  = useState(false);
+  const [urlDraft,      setUrlDraft]      = useState(clariqUrl);
+  const [savingUrl,     setSavingUrl]     = useState(false);
+  const [checking,      setChecking]      = useState(false);
+  const [checkResult,   setCheckResult]   = useState<string>('');
 
   const displayUrl = (() => {
     try {
@@ -57,6 +74,38 @@ export function ConnectionPanel({ onDisconnect, currentMode, isConnected }: Prop
     } catch {
       setError('Could not initiate connection. Please try again.');
       setConnecting(false);
+    }
+  }
+
+  async function handleSaveUrl() {
+    setSavingUrl(true);
+    setCheckResult('');
+    try {
+      await saveClariqUrl(urlDraft.trim());
+      setCheckResult('Saved. Reload to apply — the panel shows the resolved URL.');
+      // Update the displayed URL without a full reload
+      window.wcMcpData.clariqUrl = urlDraft.trim();
+    } catch (e) {
+      setCheckResult(e instanceof Error ? e.message : 'Failed to save URL.');
+    } finally {
+      setSavingUrl(false);
+    }
+  }
+
+  async function handleCheckCloud() {
+    setChecking(true);
+    setCheckResult('');
+    try {
+      const res = await checkClariqCloud();
+      if (res.reachable) {
+        setCheckResult(`✓ Reachable (HTTP ${res.http_code}). Redirect target: ${res.target}`);
+      } else {
+        setCheckResult(`✗ Unreachable: ${res.error ?? 'unknown error'} (${res.target})`);
+      }
+    } catch (e) {
+      setCheckResult(e instanceof Error ? e.message : 'Check failed.');
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -163,6 +212,53 @@ export function ConnectionPanel({ onDisconnect, currentMode, isConnected }: Prop
             {connecting ? <span className="mcp-spinner" aria-hidden="true" /> : null}
             {connecting ? 'Redirecting…' : 'Securely Connect with Clariq'}
           </button>
+
+          {/* Advanced: override the Clariq Cloud URL (staging / local testing) */}
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                font: 'inherit', fontSize: 12, color: 'var(--mcp-text-3)',
+              }}
+            >
+              {showAdvanced ? '▾' : '▸'} Advanced — Cloud URL override & diagnostics
+            </button>
+          </div>
+
+          {showAdvanced && (
+            <div style={{
+              marginTop: 10, padding: 12, background: 'var(--mcp-bg)',
+              border: '1px solid var(--mcp-border)', borderRadius: 10,
+            }}>
+              <label className="mcp-label" style={{ fontSize: 11 }}>Clariq Cloud URL</label>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <input
+                  type="text"
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  placeholder="https://app.clariqapp.com"
+                  style={{
+                    flex: 1, fontSize: 13, padding: '7px 10px', borderRadius: 8,
+                    border: '1px solid var(--mcp-border)', background: 'var(--mcp-surface)',
+                    color: 'var(--mcp-text)', fontFamily: 'var(--mcp-font-mono)',
+                  }}
+                />
+                <button type="button" className="mcp-btn mcp-btn--secondary" disabled={savingUrl} onClick={handleSaveUrl}>
+                  {savingUrl ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" className="mcp-btn mcp-btn--secondary" disabled={checking} onClick={handleCheckCloud}>
+                  {checking ? 'Checking…' : 'Test'}
+                </button>
+              </div>
+              {checkResult && (
+                <p style={{ marginTop: 8, fontSize: 12, color: 'var(--mcp-text-2)', fontFamily: 'var(--mcp-font-mono)', wordBreak: 'break-all' }}>
+                  {checkResult}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
