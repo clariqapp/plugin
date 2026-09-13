@@ -19,7 +19,7 @@ Talk to your WooCommerce store. Connect Claude (or any MCP-compatible AI assista
 Two ways to run it:
 
 = Local Bridge (self-hosted, free, unlimited) =
-Analytics run on *your* server against your own database. Your order data never leaves your infrastructure — no account, no quota. The plugin exposes a small HMAC-authenticated REST bridge (`/wp-json/mcp-bridge/v1/*`) that the open-source [Clariq MCP Server](https://github.com/clariq-dev/mcp-server) calls from your own machine.
+Analytics run on *your* server against your own database. Your order data never leaves your infrastructure — no account, no quota. The plugin exposes a small HMAC-authenticated REST bridge (`/wp-json/mcp-bridge/v1/*`) that the open-source [Clariq MCP Server](https://github.com/clariqapp/mcp-server) calls from your own machine.
 
 = Clariq Cloud (hosted) =
 Sync orders to Clariq Cloud for a managed dashboard, longer history, and team access. Optional — the plugin is fully functional without it.
