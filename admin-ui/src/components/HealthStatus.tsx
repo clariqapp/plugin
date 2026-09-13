@@ -1,4 +1,5 @@
 import React from '@wordpress/element';
+import type { ReactNode } from 'react';
 import { StatusResponse } from '../lib/api';
 
 interface Props {
@@ -16,7 +17,7 @@ function Dot({ ok }: { ok: boolean }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="mcp-health-row">
       <span className="mcp-health-row__label">{label}</span>

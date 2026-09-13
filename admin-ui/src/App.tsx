@@ -79,11 +79,8 @@ export function App() {
       {/* Header */}
       <header className="mcp-header">
         <div className="mcp-header__logo">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
-            <rect width="28" height="28" rx="8" fill="#7C3AED" />
-            <path d="M9 19V15M14 19V9M19 19V12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="mcp-header__title">Clariq Analytics</span>
+          <span className="mcp-header__wordmark">Clariq<span className="mcp-header__dot">.</span></span>
+          <span className="mcp-header__chip">WooCommerce Analytics MCP</span>
         </div>
         <span className="mcp-header__version">v{status?.plugin_version ?? '—'}</span>
       </header>

@@ -138,8 +138,7 @@ export function ConnectionPanel({ onDisconnect, currentMode, isConnected }: Prop
           <div style={{ marginTop: 16 }}>
             <button
               type="button"
-              className="mcp-btn mcp-btn--secondary"
-              style={{ color: 'var(--mcp-red)', borderColor: 'var(--mcp-red)' }}
+              className="mcp-btn mcp-btn--danger"
               disabled={disconnecting}
               onClick={handleDisconnect}
             >
@@ -151,8 +150,8 @@ export function ConnectionPanel({ onDisconnect, currentMode, isConnected }: Prop
       ) : (
         /* ── Disconnected state ── */
         <div className="mcp-connect-prompt">
-          <p style={{ fontSize: 13.5, color: 'var(--mcp-text-2)', marginBottom: 16 }}>
-            Connect your WooCommerce store with <strong style={{ color: 'var(--mcp-text)' }}>Clariq</strong> to unlock modern, deep-insights analytics. You will be redirected to <span style={{ fontFamily: 'monospace', background: 'var(--mcp-primary-muted)', padding: '2px 6px', borderRadius: '4px' }}>{displayUrl}</span> to securely authorize the integration.
+          <p style={{ fontSize: 13.5, color: 'var(--mcp-text-2)', marginBottom: 16, lineHeight: 1.6 }}>
+            Connect your WooCommerce store to <strong style={{ color: 'var(--mcp-text)', fontWeight: 600 }}>Clariq Cloud</strong> for a managed analytics dashboard and team access. You'll be redirected to <span className="mcp-connect-prompt__domain">{displayUrl}</span> to securely authorize the integration.
           </p>
 
           <button

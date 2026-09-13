@@ -179,7 +179,7 @@ export function BridgeSetupPanel() {
       <div className="mcp-bridge-test">
         <button
           type="button"
-          className="mcp-btn mcp-btn--secondary"
+          className="mcp-btn mcp-btn--primary"
           disabled={testState === 'testing'}
           onClick={handleTest}
         >
