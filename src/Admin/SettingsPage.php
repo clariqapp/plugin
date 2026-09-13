@@ -155,12 +155,14 @@ final class SettingsPage {
      * @return \WP_REST_Response
      */
     public function get_status(\WP_REST_Request $request): \WP_REST_Response {
+        $mode       = get_option('wc_mcp_connection_mode', 'local_bridge');
         $tenant_id  = get_option('wc_mcp_tenant_id');
         $auth_token = get_option('wc_mcp_auth_token');
 
         // Validate connection against Clariq — detect dashboard-side disconnects.
+        // Only relevant in cloud_sync mode; local bridge needs no cloud account.
         $is_connected = false;
-        if ($tenant_id && $auth_token) {
+        if ('cloud_sync' === $mode && $tenant_id && $auth_token) {
             $response = wp_remote_get(
                 rtrim(WC_MCP_CLARIQ_INTERNAL_URL, '/') . '/v1/stores/me',
                 [
@@ -207,6 +209,7 @@ final class SettingsPage {
             : 'Never';
 
         return new \WP_REST_Response([
+            'mode'               => $mode,
             'is_connected'       => $is_connected,
             'tenant_id'          => $is_connected ? $tenant_id : '',
             'warehouse_sync'     => [

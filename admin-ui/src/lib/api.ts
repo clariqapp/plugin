@@ -3,6 +3,7 @@ import apiFetch from '@wordpress/api-fetch';
 export type ConnectionMode = 'cloud_sync' | 'local_bridge';
 
 export interface StatusResponse {
+  mode:          ConnectionMode;
   is_connected:  boolean;
   warehouse_sync: {
     connected:   boolean;

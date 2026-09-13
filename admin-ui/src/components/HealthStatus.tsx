@@ -47,11 +47,27 @@ export function HealthStatus({ status, loading, error }: Props) {
 
   if (!status) return null;
 
-  const { warehouse_sync, bridge_latency, pending_jobs } = status;
+  const { mode, warehouse_sync, bridge_latency, pending_jobs } = status;
 
-  const latencyLabel = bridge_latency !== null
+  const latencyLabel = bridge_latency !== null && bridge_latency > 0
     ? `${bridge_latency.toFixed(2)}s (${bridge_latency < 0.5 ? 'Excellent' : bridge_latency < 1.5 ? 'Good' : 'Degraded'})`
-    : 'N/A (Option A active)';
+    : 'Measured on next connection test';
+
+  if (mode === 'local_bridge') {
+    return (
+      <div className="mcp-field-group">
+        <label className="mcp-label">System Status &amp; Health Diagnostics</label>
+        <div className="mcp-health-panel">
+          <Row
+            label="Connection Mode"
+            value={<><span className="mcp-status-dot mcp-status-dot--green" />Local Bridge — self-hosted &amp; private</>}
+          />
+          <Row label="Bridge Latency" value={latencyLabel} />
+          <Row label="Plugin Version" value={`v${status.plugin_version}`} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mcp-field-group">

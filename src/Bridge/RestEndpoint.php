@@ -87,6 +87,13 @@ final class RestEndpoint {
     }
 
     public function handle_ping(\WP_REST_Request $request): \WP_REST_Response {
+        // Record request latency so the admin health panel shows a live figure
+        // instead of a placeholder. Read by SettingsPage::get_status().
+        $start = $_SERVER['REQUEST_TIME_FLOAT'] ?? null;
+        if ($start) {
+            update_option('wc_mcp_bridge_latency', round(microtime(true) - (float) $start, 3), false);
+        }
+
         return new \WP_REST_Response([
             'status'    => 'ok',
             'tenant_id' => get_option('wc_mcp_tenant_id', ''),

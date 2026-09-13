@@ -130,8 +130,12 @@ export function App() {
         {/* Section 4 */}
         <HealthStatus status={status} loading={loading} error={error} />
 
-        {/* Save bar */}
-        <div className="mcp-save-bar">
+        {/* Save bar — only when there are unsaved changes or a save result */}
+        {(mode !== initialMode ||
+          backfillRange !== Number(initialRange) ||
+          syncHour !== Number(initialSyncHour ?? 2) ||
+          saveMsg) && (
+          <div className="mcp-save-bar">
           {saveMsg && (
             <span className={`mcp-inline-msg ${saveMsg.includes('Failed') ? 'mcp-inline-msg--error' : 'mcp-inline-msg--success'}`}>
               {saveMsg}
@@ -146,7 +150,8 @@ export function App() {
             {saving ? <span className="mcp-spinner" aria-hidden="true" /> : null}
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
