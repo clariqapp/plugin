@@ -29,7 +29,7 @@ define('WC_MCP_URL',         plugin_dir_url(__FILE__));
 define('WC_MCP_BASENAME',    plugin_basename(__FILE__));
 // Allow wp-config.php (or a mu-plugin) to pre-define the Clariq URL for local dev/staging overrides.
 if (!defined('WC_MCP_CLARIQ_URL')) {
-    define('WC_MCP_CLARIQ_URL', apply_filters('wc_mcp_clariq_url', 'https://app.clariq.com'));
+    define('WC_MCP_CLARIQ_URL', apply_filters('wc_mcp_clariq_url', 'https://app.clariqapp.com'));
 }
 // Server-to-server URL (wp_remote_request). In Docker, localhost inside the container
 // points to the container itself — not the host. Override this constant in wp-config.php

@@ -16,8 +16,19 @@ namespace Clariq\McpPlugin\Onboarding;
  */
 final class HandshakeClient {
 
-    private const SAAS_REGISTER_ENDPOINT = 'https://api.clariq.com/v1/tenants';
     private const REQUEST_TIMEOUT        = 15; // seconds
+
+    /**
+     * SaaS API base URL — the internal (API) URL, not the dashboard URL.
+     * Falls back to WC_MCP_CLARIQ_URL (app.clariqapp.com) when the internal
+     * URL is not defined; production should define WC_MCP_CLARIQ_INTERNAL_URL.
+     */
+    private static function saas_base_url(): string {
+        return (string) apply_filters(
+            'wc_mcp_clariq_internal_url',
+            defined('WC_MCP_CLARIQ_INTERNAL_URL') ? WC_MCP_CLARIQ_INTERNAL_URL : WC_MCP_CLARIQ_URL
+        );
+    }
 
     /**
      * Called once on plugin activation.
@@ -42,7 +53,7 @@ final class HandshakeClient {
         }
 
         wp_remote_request(
-            self::SAAS_REGISTER_ENDPOINT . '/' . rawurlencode($tenant_id),
+            self::saas_base_url() . '/v1/tenants/' . rawurlencode($tenant_id),
             [
                 'method'  => 'DELETE',
                 'timeout' => self::REQUEST_TIMEOUT,
