@@ -26,15 +26,21 @@ final class GetCouponLeakage {
         $end_date   = $this->sanitize_date($args['end_date']   ?? null) ?? date('Y-m-d');
         $limit      = min(max((int) ($args['limit'] ?? 25), 1), 200);
 
-        $items_table  = $wpdb->prefix . 'woocommerce_order_items';
         $coupon_table = $wpdb->prefix . 'wc_order_coupon_lookup';
         $stats_table  = $wpdb->prefix . 'wc_order_stats';
+        $posts_table  = $wpdb->prefix . 'posts';
         $statuses     = $this->order_status_list();
 
+        // The coupon-usage lookup already holds exactly one row per (order,
+        // coupon), so we join it straight to order stats and resolve the coupon
+        // code from the coupon post title. We deliberately do NOT join
+        // wp_woocommerce_order_items: an order can carry several coupons, and
+        // joining item rows to lookup rows on order_id alone yields an N*N
+        // cartesian product that double-counts discounts and inflates revenue.
         $sql = $wpdb->prepare(
             "SELECT
-                cp.order_item_name                                          AS coupon_code,
-                COUNT(DISTINCT stats.order_id)                              AS total_usages,
+                pc.post_title                                               AS coupon_code,
+                COUNT(DISTINCT cplook.order_id)                             AS total_usages,
                 SUM(cplook.discount_amount)                                 AS total_discount_given,
                 SUM(stats.total_sales)                                      AS gross_revenue_generated,
                 SUM(stats.net_total)                                        AS true_net_product_revenue,
@@ -42,15 +48,15 @@ final class GetCouponLeakage {
                     (SUM(cplook.discount_amount) / NULLIF(SUM(stats.total_sales), 0)) * 100,
                     2
                 )                                                           AS margin_drain_percentage
-            FROM {$items_table} cp
-            JOIN {$coupon_table} cplook
-                ON cp.order_id = cplook.order_id
+            FROM {$coupon_table} cplook
+            JOIN {$posts_table} pc
+                ON pc.ID = cplook.coupon_id
+               AND pc.post_type = 'shop_coupon'
             JOIN {$stats_table} stats
-                ON cp.order_id = stats.order_id
-            WHERE cp.order_item_type = 'coupon'
-              AND stats.status IN ({$statuses})
+                ON stats.order_id = cplook.order_id
+            WHERE stats.status IN ({$statuses})
               AND stats.date_created_gmt BETWEEN %s AND %s
-            GROUP BY cp.order_item_name
+            GROUP BY pc.post_title
             ORDER BY total_discount_given DESC
             LIMIT %d",
             $start_date . ' 00:00:00',

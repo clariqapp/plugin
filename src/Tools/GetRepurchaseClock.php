@@ -25,6 +25,21 @@ final class GetRepurchaseClock {
     public function execute(array $args): array|\WP_Error {
         global $wpdb;
 
+        // LAG()/CTE require MySQL 8.0+ or MariaDB 10.2+. Guard so older MySQL 5.7
+        // installs get a clear message instead of an opaque SQL syntax error.
+        // Fail open: only block when we positively identify pre-8.0 MySQL, so
+        // MariaDB and unidentifiable servers are never wrongly rejected.
+        $server_info = strtolower((string) $wpdb->db_server_info());
+        $db_version  = $wpdb->db_version();
+        $is_mariadb  = strpos($server_info, 'mariadb') !== false;
+        if (!$is_mariadb && $db_version && version_compare($db_version, '8.0', '<')) {
+            return new \WP_Error(
+                'mcp_unsupported_db',
+                'get_repurchase_clock requires MySQL 8.0+ or MariaDB 10.2+ (window functions).',
+                ['status' => 501]
+            );
+        }
+
         $start_date = $this->sanitize_date($args['start_date'] ?? null) ?? date('Y-m-d', strtotime('-365 days'));
         $end_date   = $this->sanitize_date($args['end_date']   ?? null) ?? date('Y-m-d');
 

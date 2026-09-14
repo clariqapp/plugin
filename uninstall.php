@@ -14,7 +14,7 @@ defined('WP_UNINSTALL_PLUGIN') || exit;
 
 // Bootstrap autoloader without booting the full plugin.
 define('WC_MCP_DIR', plugin_dir_path(__FILE__));
-define('WC_MCP_VERSION', '1.0.0');
+define('WC_MCP_VERSION', '1.3.0');
 define('WC_MCP_FILE', __FILE__);
 define('WC_MCP_URL', '');
 define('WC_MCP_BASENAME', '');

@@ -63,6 +63,10 @@ final class GetCustomerInsights {
         }
 
         // retention_cohorts
+        // Only registered customers can be tracked across orders. Guest orders
+        // all carry customer_id = 0, so including them would collapse every
+        // guest into a single synthetic "customer" and badly skew the split —
+        // hence the customer_id > 0 filter (matches GetRepurchaseClock).
         $sql = $wpdb->prepare(
             "SELECT
                 SUM(CASE WHEN cs.order_count = 1 THEN 1 ELSE 0 END)  AS first_time_buyers,
@@ -72,6 +76,7 @@ final class GetCustomerInsights {
                 SELECT o.customer_id, COUNT(o.id) AS order_count
                 FROM {$orders_table} o
                 WHERE o.status IN ({$statuses})
+                  AND o.customer_id > 0
                   AND o.date_created_gmt BETWEEN %s AND %s
                 GROUP BY o.customer_id
             ) AS cs",
