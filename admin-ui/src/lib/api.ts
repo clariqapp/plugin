@@ -39,7 +39,12 @@ export async function saveSettings(payload: SettingsPayload): Promise<void> {
 }
 
 export async function initiateConnect(mode: ConnectionMode): Promise<InitiateConnectResponse> {
-  return apiFetch({ url: `${base}connect/initiate?connection_mode=${encodeURIComponent(mode)}` });
+  // `base` (rest_url) may already carry a query string on plain-permalink sites,
+  // e.g. `…/index.php?rest_route=/wc-mcp/v1/`. Appending another `?…` would create
+  // a second `?`, which @wordpress/api-fetch's locale middleware then folds into
+  // the `rest_route` value (→ 404). Use `&` when the root already has a `?`.
+  const sep = base.includes('?') ? '&' : '?';
+  return apiFetch({ url: `${base}connect/initiate${sep}connection_mode=${encodeURIComponent(mode)}` });
 }
 
 export async function disconnect(): Promise<void> {
@@ -65,24 +70,5 @@ export async function rotateBridgeSecret(): Promise<RotateSecretResponse> {
   return apiFetch({
     url:    `${base}bridge/rotate-secret`,
     method: 'POST',
-  });
-}
-
-export interface ConnectCheckResponse {
-  reachable: boolean;
-  target:    string;
-  http_code?: number;
-  error?:     string;
-}
-
-export async function checkClariqCloud(): Promise<ConnectCheckResponse> {
-  return apiFetch({ url: `${base}connect/check` });
-}
-
-export async function saveClariqUrl(url: string): Promise<void> {
-  await apiFetch({
-    url:    `${base}settings`,
-    method: 'POST',
-    data:   { clariq_url: url },
   });
 }
