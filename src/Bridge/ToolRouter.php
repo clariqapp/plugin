@@ -11,7 +11,6 @@ use Clariq\McpPlugin\Tools\GetCustomerInsights;
 use Clariq\McpPlugin\Tools\GetTechnicalAnalytics;
 use Clariq\McpPlugin\Tools\GetInventoryRunway;
 use Clariq\McpPlugin\Tools\GetCouponLeakage;
-use Clariq\McpPlugin\Tools\GetRepurchaseClock;
 
 /**
  * Routes a validated tool name to its PHP handler class.
@@ -36,7 +35,6 @@ final class ToolRouter {
             'get_technical_analytics'    => (new GetTechnicalAnalytics())->execute($args),
             'get_inventory_runway'       => (new GetInventoryRunway())->execute($args),
             'get_coupon_leakage'         => (new GetCouponLeakage())->execute($args),
-            'get_repurchase_clock'       => (new GetRepurchaseClock())->execute($args),
             default                      => new \WP_Error(
                 'mcp_unknown_tool',
                 sprintf('Unknown tool: %s', esc_html($tool)),

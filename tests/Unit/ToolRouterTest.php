@@ -82,6 +82,7 @@ class ToolRouterTest extends TestCase {
             'product_catalog'        => ['get_product_analytics',     ['mode'      => 'catalog_dictionary']],
             'customer_geography'     => ['get_customer_insights',     ['dimension' => 'geography']],
             'customer_retention'     => ['get_customer_insights',     ['dimension' => 'retention_cohorts']],
+            'customer_repurchase'    => ['get_customer_insights',     ['dimension' => 'repurchase_intervals']],
             'technical_device_types' => ['get_technical_analytics',   ['breakdown' => 'device_types']],
             'technical_os_types'     => ['get_technical_analytics',   ['breakdown' => 'os_types']],
             'technical_os_x_payment' => ['get_technical_analytics',   ['breakdown' => 'os_x_payment']],

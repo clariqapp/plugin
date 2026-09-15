@@ -63,6 +63,18 @@ final class BackfillWorker {
         $range    = (int) get_option('wc_mcp_backfill_range', 12);
         $since    = date('Y-m-d H:i:s', strtotime("-{$range} months"));
 
+        // Free (controlled-backfill) stores are limited to a trailing retention
+        // window (wc_mcp_retention_days, set from /v1/stores/me — 30 days on the
+        // free tier). Clamp $since forward to that floor so no older history is
+        // synced to the warehouse. Paid plans have no cap (option absent → 0).
+        $retention_days = (int) get_option('wc_mcp_retention_days', 0);
+        if ($retention_days > 0) {
+            $floor = date('Y-m-d H:i:s', strtotime("-{$retention_days} days"));
+            if ($floor > $since) {
+                $since = $floor;
+            }
+        }
+
         // Count total orders on first batch for progress tracking
         $backfill_total = null;
         if ($offset === 0) {

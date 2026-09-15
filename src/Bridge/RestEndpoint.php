@@ -120,7 +120,6 @@ final class RestEndpoint {
                     'get_technical_analytics',
                     'get_inventory_runway',
                     'get_coupon_leakage',
-                    'get_repurchase_clock',
                 ],
             ],
             'args' => [

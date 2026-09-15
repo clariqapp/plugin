@@ -85,6 +85,9 @@ final class SettingsPage {
             'clariqUrl'           => self::resolved_clariq_url(),
             'mode'                => get_option('wc_mcp_connection_mode', 'local_bridge'),
             'backfillRange'       => get_option('wc_mcp_backfill_range', '12'),
+            'plan'                => get_option('wc_mcp_plan', 'free'),
+            'retentionDays'       => self::retention_days(),
+            'maxBackfillMonths'   => self::max_backfill_months(),
             'syncHour'            => (int) get_option('wc_mcp_sync_hour', 2),
             'backfillStatus'      => self::get_backfill_status(),
             'backfillCompletedAt' => self::format_option_timestamp('wc_mcp_backfill_complete'),
@@ -180,6 +183,18 @@ final class SettingsPage {
 
                 if ($code === 200 && !empty($body['is_active'])) {
                     $is_connected = true;
+                    // Persist the owning org's plan + effective data-retention
+                    // window so sync + admin UI can self-enforce the free-tier
+                    // "controlled backfill" cap (30 days). null/absent = unlimited.
+                    if (isset($body['plan'])) {
+                        update_option('wc_mcp_plan', sanitize_text_field((string) $body['plan']));
+                    }
+                    $retention = $body['retention_days'] ?? null;
+                    if (is_int($retention) && $retention > 0) {
+                        update_option('wc_mcp_retention_days', $retention);
+                    } else {
+                        delete_option('wc_mcp_retention_days'); // paid → unlimited
+                    }
                 } elseif ($code === 401) {
                     // Only a definitive 401 Unauthorized means the token is genuinely
                     // invalid. Any other non-200 (5xx, timeout, etc.) is treated
@@ -218,6 +233,9 @@ final class SettingsPage {
             ],
             'bridge_latency'     => ($v = get_option('wc_mcp_bridge_latency')) !== false ? (float) $v : null,
             'pending_jobs'       => $pending_jobs,
+            'plan'                => get_option('wc_mcp_plan', 'free'),
+            'retention_days'      => self::retention_days(),        // null = unlimited history
+            'max_backfill_months' => self::max_backfill_months(),   // null = unlimited
             'plugin_version'     => WC_MCP_VERSION,
             'signing_key_defined' => defined('WC_MCP_CLARIQ_SIGNING_KEY'),
         ]);
@@ -241,7 +259,14 @@ final class SettingsPage {
         }
 
         if ($request->has_param('backfill_range')) {
-            update_option('wc_mcp_backfill_range', (int) $request->get_param('backfill_range'));
+            $range = (int) $request->get_param('backfill_range');
+            // Free (controlled-backfill) stores cap the sync window; clamp the
+            // requested months down to the plan's max so the UI can't exceed it.
+            $max = self::max_backfill_months();
+            if ($max !== null && $range > $max) {
+                $range = $max;
+            }
+            update_option('wc_mcp_backfill_range', $range);
         }
 
         if ($request->has_param('sync_hour')) {
@@ -277,6 +302,29 @@ final class SettingsPage {
     public static function resolved_clariq_url(): string {
         $override = get_option('wc_mcp_clariq_url_override', '');
         return $override ? untrailingslashit((string) $override) : WC_MCP_CLARIQ_URL;
+    }
+
+    /**
+     * Effective data-retention window (in days) for this store's plan, as last
+     * reported by the SaaS API via /v1/stores/me. Returns null for unlimited
+     * history (paid plans). Free stores on cloud sync get a 30-day window (the
+     * "controlled backfill" tier); this drives both the sync cap and the UI.
+     */
+    public static function retention_days(): ?int {
+        $days = (int) get_option('wc_mcp_retention_days', 0);
+        return $days > 0 ? $days : null;
+    }
+
+    /**
+     * The retention window expressed as whole backfill months (rounded up), or
+     * null when history is unlimited. Used to cap the backfill range selector.
+     */
+    public static function max_backfill_months(): ?int {
+        $days = self::retention_days();
+        if ($days === null) {
+            return null; // unlimited
+        }
+        return max(1, (int) ceil($days / 30));
     }
 
     /**

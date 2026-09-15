@@ -12,6 +12,9 @@ interface Props {
   syncHour:            number;
   onHourChange:        (hour: number) => void;
   disabled?:           boolean;
+  plan?:               string;
+  retentionDays?:      number | null;
+  maxBackfillMonths?:  number | null;
 }
 
 const RANGE_OPTIONS = [
@@ -40,10 +43,25 @@ export function SyncControls({
   syncHour,
   onHourChange,
   disabled,
+  plan,
+  retentionDays,
+  maxBackfillMonths,
 }: Props) {
   const [syncing,  setSyncing]  = useState(false);
   const [syncMsg,  setSyncMsg]  = useState<string | null>(null);
   const [syncOk,   setSyncOk]   = useState(false);
+
+  // Free (controlled-backfill) stores are limited to a trailing data window, so
+  // the range choices are capped and a "Last 30 Days" option is offered when the
+  // window is sub-monthly. Paid plans see the full set.
+  const isCapped = maxBackfillMonths != null;
+  let rangeOptions = RANGE_OPTIONS;
+  if (isCapped) {
+    rangeOptions = RANGE_OPTIONS.filter(o => o.value <= maxBackfillMonths!);
+    if (rangeOptions.length === 0 || (retentionDays != null && retentionDays <= 30)) {
+      rangeOptions = [{ value: maxBackfillMonths!, label: `Last ${retentionDays ?? 30} Days` }];
+    }
+  }
 
   async function handleSyncNow() {
     setSyncing(true);
@@ -104,13 +122,20 @@ export function SyncControls({
               disabled={disabled || backfillStatus === 'running' || backfillStatus === 'complete'}
               onChange={e => onRangeChange(Number(e.target.value))}
             >
-              {RANGE_OPTIONS.map(opt => (
+              {rangeOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
               ))}
             </select>
           </div>
+
+          {isCapped && (
+            <p className="mcp-inline-msg mcp-inline-msg--warning" style={{ marginTop: 8, fontSize: 12 }}>
+              Your {plan ?? 'free'} plan syncs the last {retentionDays ?? 30} days of
+              orders. Upgrade to sync and analyse your full order history.
+            </p>
+          )}
 
           {/* Status badge */}
           {backfillStatus === 'running' && (

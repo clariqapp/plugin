@@ -70,6 +70,8 @@ if (!class_exists('wpdb')) {
         /** @return array<int, array<string, mixed>>|null */
         public function get_results(string $query, string $output = 'OBJECT'): ?array { return []; }
         public function get_var(string $query): mixed { return null; }
+        public function db_version(): ?string { return '8.0.0'; }
+        public function db_server_info(): string { return '8.0.0'; }
     }
 }
 

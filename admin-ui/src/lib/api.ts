@@ -11,6 +11,9 @@ export interface StatusResponse {
   };
   bridge_latency:  number | null;
   pending_jobs:    number;
+  plan?:           string;
+  retention_days?: number | null;
+  max_backfill_months?: number | null;
   plugin_version:  string;
 }
 

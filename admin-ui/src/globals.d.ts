@@ -11,6 +11,9 @@ export interface WcMcpData {
   bridgeUrl:           string;
   mode:                'cloud_sync' | 'local_bridge';
   backfillRange:       string;
+  plan:                string;        // owning org's plan (free|starter|business|enterprise)
+  retentionDays:       number | null; // trailing-day data window; null = unlimited
+  maxBackfillMonths:   number | null; // backfill range cap (months); null = unlimited
   syncHour:            number;
   isConnected:         boolean;
   siteUrl:             string;

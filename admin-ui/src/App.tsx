@@ -17,10 +17,24 @@ export function App() {
     backfillStatus: initialBackfillStatus,
     backfillCompletedAt: initialBackfillCompletedAt,
     lastSyncAt: initialLastSyncAt,
+    plan: initialPlan,
+    maxBackfillMonths: initialMaxBackfillMonths,
+    retentionDays: initialRetentionDays,
   } = window.wcMcpData;
 
+  // Free (controlled-backfill) stores cap the sync window. Prefer the live
+  // status value (refreshed from /v1/stores/me) and fall back to the bootstrap.
+  const { status, loading, error, refresh } = useStatus();
+  const maxBackfillMonths =
+    status?.max_backfill_months ?? initialMaxBackfillMonths ?? null;
+  const retentionDays = status?.retention_days ?? initialRetentionDays ?? null;
+  const plan = status?.plan ?? initialPlan ?? 'free';
+
+  const clampRange = (r: number) =>
+    maxBackfillMonths != null ? Math.min(r, maxBackfillMonths) : r;
+
   const [mode,                setMode]                = useState<ConnectionMode>(initialMode);
-  const [backfillRange,       setBackfillRange]       = useState(Number(initialRange));
+  const [backfillRange,       setBackfillRange]       = useState(clampRange(Number(initialRange)));
   const [syncHour,            setSyncHour]            = useState(Number(initialSyncHour ?? 2));
   const [isConnected,         setIsConnected]         = useState(initialConnected);
   const [backfillStatus,      setBackfillStatus]      = useState(initialBackfillStatus);
@@ -29,7 +43,13 @@ export function App() {
   const [saving,              setSaving]              = useState(false);
   const [saveMsg,             setSaveMsg]             = useState<string | null>(null);
 
-  const { status, loading, error, refresh } = useStatus();
+  // Keep the selected range within the plan cap if the cap tightens (e.g. the
+  // status poll reports a newly-downgraded plan).
+  useEffect(() => {
+    if (maxBackfillMonths != null && backfillRange > maxBackfillMonths) {
+      setBackfillRange(maxBackfillMonths);
+    }
+  }, [maxBackfillMonths]);
 
   // Detect dashboard-side disconnects: if the status poll sees is_connected=false
   // while we think we're connected, sync local state immediately.
@@ -116,13 +136,16 @@ export function App() {
           mode={mode}
           isConnected={isConnected}
           backfillRange={backfillRange}
-          onRangeChange={setBackfillRange}
+          onRangeChange={r => setBackfillRange(clampRange(r))}
           backfillStatus={backfillStatus}
           backfillCompletedAt={backfillCompletedAt}
           lastSyncAt={lastSyncAt}
           syncHour={syncHour}
           onHourChange={setSyncHour}
           disabled={saving}
+          plan={plan}
+          retentionDays={retentionDays}
+          maxBackfillMonths={maxBackfillMonths}
         />
 
         <div className="mcp-divider" />
