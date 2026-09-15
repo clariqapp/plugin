@@ -1,5 +1,6 @@
 import React, { useState } from '@wordpress/element';
 import { rotateBridgeSecret } from '../lib/api';
+import { CheckIcon, AlertIcon, EyeIcon, EyeOffIcon, CopyIcon } from './icons';
 
 type TestState = 'idle' | 'testing' | 'ok' | 'fail';
 
@@ -24,8 +25,9 @@ async function copyText(text: string, setCopied: (id: string) => void, id: strin
 }
 
 /**
- * Setup panel for the self-hosted Local Bridge mode: shows the bridge endpoint,
- * the shared secret, a ready-to-paste MCP client config, and a connectivity test.
+ * Setup for Private (self-hosted) mode: presented as three plain-language steps —
+ * install the connector, paste the config, then test. Monospace appears only in
+ * the actual config block and for the opaque secret/endpoint values.
  */
 export function BridgeSetupPanel() {
   const { bridgeUrl, bridgeSecret: initialSecret, siteUrl } = window.wcMcpData;
@@ -56,10 +58,8 @@ export function BridgeSetupPanel() {
 
   async function handleRotate() {
     if (!window.confirm(
-      'Generate a new bridge secret? Any MCP clients using the current secret will stop working until you update their config.',
-    )) {
-      return;
-    }
+      'Create a new secret key? Any AI assistant using the current key will stop working until you update its config.',
+    )) return;
     setRotating(true);
     setTestState('idle');
     try {
@@ -68,7 +68,7 @@ export function BridgeSetupPanel() {
       setRevealed(true);
     } catch {
       setTestState('fail');
-      setTestMessage('Failed to rotate the secret. Please try again.');
+      setTestMessage('We couldn’t create a new key. Please try again.');
     } finally {
       setRotating(false);
     }
@@ -79,118 +79,162 @@ export function BridgeSetupPanel() {
     setTestMessage('');
     try {
       const token = await hmacSha256Hex(secret, '');
-      const res = await fetch(`${bridgeUrl}ping`, {
-        headers: { 'X-MCP-Bridge-Token': token },
-      });
+      const res = await fetch(`${bridgeUrl}ping`, { headers: { 'X-MCP-Bridge-Token': token } });
       if (res.ok) {
         setTestState('ok');
-        setTestMessage('Connected — the bridge is reachable and the secret is valid.');
+        setTestMessage('Success — your connection is working and ready to use.');
       } else if (res.status === 401) {
         setTestState('fail');
-        setTestMessage('Bridge rejected the secret (401). Try rotating it and updating your config.');
+        setTestMessage('The secret key was rejected. Create a new key and update your config.');
       } else if (res.status === 403) {
         setTestState('fail');
-        setTestMessage('Bridge is disabled (403). Make sure Local Bridge is the active mode.');
+        setTestMessage('Private mode isn’t active. Switch to Private on the Connection tab.');
       } else if (res.status === 404) {
         setTestState('fail');
-        setTestMessage('Bridge endpoint not found (404). Check that permalinks are enabled.');
+        setTestMessage('The connection address wasn’t found. In WordPress, go to Settings → Permalinks and click Save.');
       } else {
         setTestState('fail');
-        setTestMessage(`Unexpected response: HTTP ${res.status}.`);
+        setTestMessage(`Unexpected response (HTTP ${res.status}). Please try again.`);
       }
     } catch {
       setTestState('fail');
-      setTestMessage('Could not reach your site. Check your URL, HTTPS, and any firewall/WAF rules.');
+      setTestMessage('We couldn’t reach your site. Check your address, HTTPS, and any firewall rules.');
     }
   }
 
-  const masked = '•'.repeat(12) + secret.slice(-4);
+  const masked = '•'.repeat(24) + secret.slice(-4);
 
   return (
-    <div className="mcp-field-group">
-      <label className="mcp-label">Local Bridge Setup</label>
-      <p className="mcp-sublabel">
-        Self-hosted and private — analytics run on this server and no account is needed.
-        Install the MCP server (<code>uvx --from clariq-mcp-server clariq-mcp</code>), then
-        add the config below to your MCP client (e.g. Claude Desktop).
-      </p>
-
-      {/* Endpoint */}
-      <div className="mcp-cred-row">
-        <span className="mcp-cred-row__label">Bridge endpoint</span>
-        <span className="mcp-cred-row__value-wrap">
-          <code className="mcp-cred-value">{bridgeUrl}</code>
-          <button
-            type="button"
-            className="mcp-copy-btn"
-            onClick={() => copyText(bridgeUrl, setCopiedId, 'endpoint')}
-          >
-            {copiedId === 'endpoint' ? 'Copied!' : 'Copy'}
-          </button>
-        </span>
+    <>
+      <div className="clq-section__head">
+        <div className="clq-section__title">Connect your AI assistant</div>
+        <p className="clq-section__desc">
+          Follow these three steps to let an assistant like Claude Desktop answer questions about your store.
+          Everything stays on this server.
+        </p>
       </div>
 
-      {/* Secret */}
-      <div className="mcp-cred-row">
-        <span className="mcp-cred-row__label">Bridge secret</span>
-        <span className="mcp-cred-row__value-wrap">
-          <code className="mcp-cred-value">{revealed ? secret : masked}</code>
-          <button
-            type="button"
-            className="mcp-copy-btn"
-            onClick={() => setRevealed(!revealed)}
-          >
-            {revealed ? 'Hide' : 'Reveal'}
-          </button>
-          <button
-            type="button"
-            className="mcp-copy-btn"
-            onClick={() => copyText(secret, setCopiedId, 'secret')}
-          >
-            {copiedId === 'secret' ? 'Copied!' : 'Copy'}
-          </button>
-          <button
-            type="button"
-            className="mcp-copy-btn mcp-copy-btn--danger"
-            disabled={rotating}
-            onClick={handleRotate}
-          >
-            {rotating ? 'Rotating…' : 'Rotate'}
-          </button>
-        </span>
-      </div>
-
-      {/* MCP client config */}
-      <div className="mcp-field-group" style={{ marginTop: '4px' }}>
-        <div className="mcp-code-block__header">
-          <span>claude_desktop_config.json</span>
-          <button
-            type="button"
-            className="mcp-copy-btn"
-            onClick={() => copyText(configSnippet, setCopiedId, 'config')}
-          >
-            {copiedId === 'config' ? 'Copied!' : 'Copy config'}
-          </button>
+      <div className="clq-steps">
+        {/* Step 1 — install */}
+        <div className="clq-step">
+          <span className="clq-step__num">1</span>
+          <div className="clq-step__body">
+            <div className="clq-step__title">Install the free connector</div>
+            <p className="clq-step__text">
+              On the computer running your AI assistant, install the Clariq connector by running{' '}
+              <code>uvx --from clariq-mcp-server clariq-mcp</code> in a terminal.
+            </p>
+          </div>
         </div>
-        <pre className="mcp-code-block">{configSnippet}</pre>
-      </div>
 
-      {/* Connectivity test */}
-      <div className="mcp-bridge-test">
-        <button
-          type="button"
-          className="mcp-btn mcp-btn--primary"
-          disabled={testState === 'testing'}
-          onClick={handleTest}
-        >
-          {testState === 'testing' ? 'Testing…' : 'Test Connection'}
-        </button>
-        {testMessage && (
-          <span className={`mcp-inline-msg ${testState === 'ok' ? 'mcp-inline-msg--success' : 'mcp-inline-msg--error'}`}>
-            {testMessage}
-          </span>
-        )}
+        {/* Step 2 — paste config */}
+        <div className="clq-step">
+          <span className="clq-step__num">2</span>
+          <div className="clq-step__body">
+            <div className="clq-step__title">Add this to your assistant’s config</div>
+            <p className="clq-step__text">
+              Copy the settings below into your assistant’s configuration file
+              (for Claude Desktop, that’s <code>claude_desktop_config.json</code>).
+            </p>
+
+            <div className="clq-code">
+              <div className="clq-code__bar">
+                <span>claude_desktop_config.json</span>
+                <button
+                  type="button"
+                  className="clq-ghost"
+                  onClick={() => copyText(configSnippet, setCopiedId, 'config')}
+                >
+                  {copiedId === 'config' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className="clq-code__body">{configSnippet}</pre>
+            </div>
+
+            {/* Connection details — the two values used above */}
+            <div className="clq-rows" style={{ marginTop: 14 }}>
+              <div className="clq-row">
+                <span className="clq-row__label">Store address</span>
+                <span className="clq-row__value">
+                  <code className="clq-mono">{bridgeUrl}</code>
+                  <button
+                    type="button"
+                    className="clq-icon-btn"
+                    title={copiedId === 'endpoint' ? 'Copied' : 'Copy'}
+                    onClick={() => copyText(bridgeUrl, setCopiedId, 'endpoint')}
+                  >
+                    {copiedId === 'endpoint' ? <CheckIcon /> : <CopyIcon />}
+                  </button>
+                </span>
+              </div>
+              <div className="clq-row">
+                <span className="clq-row__label">Secret key</span>
+                <span className="clq-row__value">
+                  <code className="clq-mono">{revealed ? secret : masked}</code>
+                  <button
+                    type="button"
+                    className="clq-icon-btn"
+                    title={revealed ? 'Hide' : 'Reveal'}
+                    onClick={() => setRevealed(!revealed)}
+                  >
+                    {revealed ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                  <button
+                    type="button"
+                    className="clq-icon-btn"
+                    title={copiedId === 'secret' ? 'Copied' : 'Copy'}
+                    onClick={() => copyText(secret, setCopiedId, 'secret')}
+                  >
+                    {copiedId === 'secret' ? <CheckIcon /> : <CopyIcon />}
+                  </button>
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="clq-ghost clq-ghost--danger"
+                disabled={rotating}
+                onClick={handleRotate}
+              >
+                {rotating ? 'Creating…' : 'Create a new secret key'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Step 3 — test */}
+        <div className="clq-step">
+          <span className="clq-step__num">3</span>
+          <div className="clq-step__body">
+            <div className="clq-step__title">Test the connection</div>
+            <p className="clq-step__text">
+              Make sure everything is wired up correctly before you start asking questions.
+            </p>
+
+            <button
+              type="button"
+              className="clq-btn clq-btn--secondary"
+              disabled={testState === 'testing'}
+              onClick={handleTest}
+            >
+              {testState === 'testing' ? <span className="clq-spinner" aria-hidden="true" /> : null}
+              {testState === 'testing' ? 'Testing…' : 'Test connection'}
+            </button>
+
+            {testMessage && (
+              <div
+                className={`clq-notice ${testState === 'ok' ? 'clq-notice--success' : 'clq-notice--error'}`}
+                style={{ marginTop: 12 }}
+              >
+                {testState === 'ok' ? <CheckIcon /> : <AlertIcon />}
+                <div>{testMessage}</div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

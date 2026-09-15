@@ -1,5 +1,6 @@
 import React, { useState } from '@wordpress/element';
 import { syncNow } from '../lib/api';
+import { CheckIcon, AlertIcon, InfoIcon, ShieldIcon, SparkIcon } from './icons';
 
 interface Props {
   mode:                'cloud_sync' | 'local_bridge';
@@ -18,14 +19,13 @@ interface Props {
 }
 
 const RANGE_OPTIONS = [
-  { value: 3,  label: 'Last 3 Months'  },
-  { value: 6,  label: 'Last 6 Months'  },
-  { value: 12, label: 'Last 12 Months' },
-  { value: 24, label: 'Last 24 Months' },
-  { value: 36, label: 'Last 36 Months' },
+  { value: 3,  label: 'Last 3 months'  },
+  { value: 6,  label: 'Last 6 months'  },
+  { value: 12, label: 'Last 12 months' },
+  { value: 24, label: 'Last 2 years'   },
+  { value: 36, label: 'Last 3 years'   },
 ];
 
-/** Build 24 hour options formatted as 12-hour AM/PM labels. */
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => {
   const suffix  = h < 12 ? 'AM' : 'PM';
   const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
@@ -47,19 +47,16 @@ export function SyncControls({
   retentionDays,
   maxBackfillMonths,
 }: Props) {
-  const [syncing,  setSyncing]  = useState(false);
-  const [syncMsg,  setSyncMsg]  = useState<string | null>(null);
-  const [syncOk,   setSyncOk]   = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [syncOk,  setSyncOk]  = useState(false);
 
-  // Free (controlled-backfill) stores are limited to a trailing data window, so
-  // the range choices are capped and a "Last 30 Days" option is offered when the
-  // window is sub-monthly. Paid plans see the full set.
   const isCapped = maxBackfillMonths != null;
   let rangeOptions = RANGE_OPTIONS;
   if (isCapped) {
     rangeOptions = RANGE_OPTIONS.filter(o => o.value <= maxBackfillMonths!);
     if (rangeOptions.length === 0 || (retentionDays != null && retentionDays <= 30)) {
-      rangeOptions = [{ value: maxBackfillMonths!, label: `Last ${retentionDays ?? 30} Days` }];
+      rangeOptions = [{ value: maxBackfillMonths!, label: `Last ${retentionDays ?? 30} days` }];
     }
   }
 
@@ -69,10 +66,10 @@ export function SyncControls({
     setSyncOk(false);
     try {
       await syncNow();
-      setSyncMsg('Delta sync queued. Orders will be pushed shortly.');
+      setSyncMsg('Update started — your latest orders will appear shortly.');
       setSyncOk(true);
     } catch {
-      setSyncMsg('Failed to queue sync. Please try again.');
+      setSyncMsg('We couldn’t start the update. Please try again.');
       setSyncOk(false);
     } finally {
       setSyncing(false);
@@ -80,143 +77,144 @@ export function SyncControls({
     }
   }
 
-  // ── Local Bridge: no sync needed ─────────────────────────────────────────
+  // ── Private mode: nothing to sync ─────────────────────────────────────────
   if (mode === 'local_bridge') {
     return (
-      <div className="mcp-field-group">
-        <label className="mcp-label">Sync &amp; Performance Controls</label>
-        <div className="mcp-local-bridge-notice">
-          <svg className="mcp-local-bridge-notice__icon-svg" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
-            <path fillRule="evenodd" clipRule="evenodd" d="M18 10C18 14.4183 14.4183 18 10 18C5.58172 18 2 14.4183 2 10C2 5.58172 5.58172 2 10 2C14.4183 2 18 5.58172 18 10ZM11 9H9V14H11V9ZM11 6H9V8H11V6Z" fill="currentColor" />
-          </svg>
+      <>
+        <div className="clq-section__head">
+          <div className="clq-section__title">Data &amp; Sync</div>
+        </div>
+        <div className="clq-notice clq-notice--accent">
+          <ShieldIcon />
           <div>
-            <strong>Sync not available in Local Bridge mode.</strong>
-            <p className="mcp-local-bridge-notice__body">
-              Data is queried directly from your store on demand — nothing is
-              pushed to the cloud, so there is nothing to sync.
+            <strong>Nothing to sync in Private mode.</strong>
+            <p style={{ marginTop: 4 }}>
+              Your store is read directly, on demand — no data is copied to the cloud,
+              so there’s nothing to schedule or update here.
             </p>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
+  const backfillPill = (() => {
+    if (backfillStatus === 'running') {
+      return <span className="clq-pill clq-pill--running"><span className="clq-spinner clq-spinner--accent" aria-hidden="true" />Importing…</span>;
+    }
+    if (backfillStatus === 'complete') {
+      return <span className="clq-pill clq-pill--ok"><CheckIcon />{backfillCompletedAt ? `Done · ${backfillCompletedAt}` : 'Done'}</span>;
+    }
+    return <span className="clq-pill clq-pill--idle">Not started</span>;
+  })();
+
   // ── Cloud Sync ────────────────────────────────────────────────────────────
   return (
-    <div className="mcp-field-group">
-      <label className="mcp-label">Sync &amp; Performance Controls</label>
+    <>
+      {/* Historical import */}
+      <div className="clq-section">
+        <div className="clq-section__head">
+          <div className="clq-section__title">Import your history</div>
+          <p className="clq-section__desc">
+            Choose how far back to bring in past orders when you first connect. This runs once in the background.
+          </p>
+        </div>
 
-      {/* ── Historical Backfill ── */}
-      <div className="mcp-sync-section">
-        <p className="mcp-sublabel mcp-sublabel--section">Historical Backfill</p>
-
-        <div className="mcp-sync-row mcp-sync-row--align-end">
-          <div className="mcp-select-wrap">
-            <label className="mcp-sublabel" htmlFor="mcp-backfill-range">
-              Range
-            </label>
-            <select
-              id="mcp-backfill-range"
-              className="mcp-select"
-              value={backfillRange}
-              disabled={disabled || backfillStatus === 'running' || backfillStatus === 'complete'}
-              onChange={e => onRangeChange(Number(e.target.value))}
-            >
-              {rangeOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+        <div className="clq-card clq-card__pad">
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+            <div className="clq-field" style={{ flex: 1, minWidth: 220 }}>
+              <label className="clq-field__label" htmlFor="clq-backfill-range">How much history to import</label>
+              <select
+                id="clq-backfill-range"
+                className="clq-select"
+                value={backfillRange}
+                disabled={disabled || backfillStatus === 'running' || backfillStatus === 'complete'}
+                onChange={e => onRangeChange(Number(e.target.value))}
+              >
+                {rangeOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ paddingBottom: 10 }}>{backfillPill}</div>
           </div>
 
           {isCapped && (
-            <p className="mcp-inline-msg mcp-inline-msg--warning" style={{ marginTop: 8, fontSize: 12 }}>
-              Your {plan ?? 'free'} plan syncs the last {retentionDays ?? 30} days of
-              orders. Upgrade to sync and analyse your full order history.
-            </p>
+            <div className="clq-notice clq-notice--info" style={{ marginTop: 14 }}>
+              <SparkIcon />
+              <div>
+                Your {plan ?? 'free'} plan imports the last {retentionDays ?? 30} days of orders.
+                Upgrade to import and analyze your full order history.
+              </div>
+            </div>
           )}
 
-          {/* Status badge */}
           {backfillStatus === 'running' && (
-            <span className="mcp-status-badge mcp-status-badge--running">
-              <span className="mcp-spinner mcp-spinner--inline" aria-hidden="true" />
-              In progress…
-            </span>
-          )}
-          {backfillStatus === 'running' && (
-            <p className="mcp-inline-msg mcp-inline-msg--warning" style={{ marginTop: 8, fontSize: 12 }}>
-              Waiting for WP-Cron to process the queue. In local/dev environments run:{' '}
-              <code>wp action-scheduler run</code>
-            </p>
-          )}
-          {backfillStatus === 'complete' && (
-            <span className="mcp-status-badge mcp-status-badge--complete">
-              ✓ Completed{backfillCompletedAt ? ` on ${backfillCompletedAt}` : ''}
-            </span>
-          )}
-          {backfillStatus === 'idle' && (
-            <span className="mcp-status-badge mcp-status-badge--idle">
-              Not yet started
-            </span>
+            <div className="clq-notice clq-notice--info" style={{ marginTop: 14 }}>
+              <InfoIcon />
+              <div>
+                Your history is importing in the background — you can safely leave this page.
+                <span style={{ display: 'block', marginTop: 4, color: 'var(--clq-text-muted)' }}>
+                  On local/dev sites, run <code>wp action-scheduler run</code> to process the queue.
+                </span>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      <div className="mcp-divider mcp-divider--inner" />
+      {/* Ongoing updates */}
+      <div className="clq-section">
+        <div className="clq-section__head">
+          <div className="clq-section__title">Keep data up to date</div>
+          <p className="clq-section__desc">
+            New orders sync automatically every day. Pick a time, or update now whenever you like.
+          </p>
+        </div>
 
-      {/* ── Sync Now ── */}
-      <div className="mcp-sync-section">
-        <p className="mcp-sublabel mcp-sublabel--section">Manual Sync</p>
-
-        <div className="mcp-sync-row mcp-sync-row--align-end">
-          <div className="mcp-select-wrap">
-            <label className="mcp-sublabel" htmlFor="mcp-sync-hour">
-              Daily automatic sync time (site timezone)
-            </label>
+        <div className="clq-card clq-card__pad">
+          <div className="clq-field" style={{ maxWidth: 320 }}>
+            <label className="clq-field__label" htmlFor="clq-sync-hour">Daily update time (your store’s timezone)</label>
             <select
-              id="mcp-sync-hour"
-              className="mcp-select"
+              id="clq-sync-hour"
+              className="clq-select"
               value={syncHour}
               disabled={disabled}
               onChange={e => onHourChange(Number(e.target.value))}
             >
               {HOUR_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           </div>
 
-          <div className="mcp-sync-now-wrap">
-            {lastSyncAt && isConnected && (
-              <span className="mcp-last-sync">Last synced: {lastSyncAt}</span>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 18 }}>
             {isConnected ? (
               <button
                 type="button"
-                className="mcp-btn mcp-btn--secondary"
+                className="clq-btn clq-btn--secondary"
                 disabled={disabled || syncing}
                 onClick={handleSyncNow}
               >
-                {syncing ? <span className="mcp-spinner" aria-hidden="true" /> : null}
-                {syncing ? 'Queuing…' : 'Sync Now'}
+                {syncing ? <span className="clq-spinner" aria-hidden="true" /> : null}
+                {syncing ? 'Updating…' : 'Update now'}
               </button>
             ) : (
-              <span className="mcp-inline-msg mcp-inline-msg--warning" style={{ fontSize: 12 }}>
-                Connect to Clariq to enable sync.
-              </span>
+              <span className="clq-field__hint">Connect your store to enable updates.</span>
+            )}
+            {lastSyncAt && isConnected && (
+              <span className="clq-field__hint">Last updated {lastSyncAt}</span>
             )}
           </div>
-        </div>
 
-        {syncMsg && (
-          <p className={`mcp-inline-msg ${syncOk ? 'mcp-inline-msg--success' : 'mcp-inline-msg--error'}`}>
-            {syncMsg}
-          </p>
-        )}
+          {syncMsg && (
+            <div className={`clq-notice ${syncOk ? 'clq-notice--success' : 'clq-notice--error'}`} style={{ marginTop: 14 }}>
+              {syncOk ? <CheckIcon /> : <AlertIcon />}
+              <div>{syncMsg}</div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

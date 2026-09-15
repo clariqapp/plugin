@@ -1,6 +1,7 @@
 import React from '@wordpress/element';
 import type { ReactNode } from 'react';
 import { StatusResponse } from '../lib/api';
+import { AlertIcon } from './icons';
 
 interface Props {
   status:  StatusResponse | null;
@@ -9,39 +10,48 @@ interface Props {
 }
 
 function Dot({ ok }: { ok: boolean }) {
-  return (
-    <span
-      className={`mcp-status-dot ${ok ? 'mcp-status-dot--green' : 'mcp-status-dot--red'}`}
-      aria-hidden="true"
-    />
-  );
+  return <span className={`clq-dot ${ok ? 'clq-dot--green' : 'clq-dot--red'}`} aria-hidden="true" />;
 }
 
 function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="mcp-health-row">
-      <span className="mcp-health-row__label">{label}</span>
-      <span className="mcp-health-row__value">{value}</span>
+    <div className="clq-diag__row">
+      <span className="clq-diag__label">{label}</span>
+      <span className="clq-diag__value">{value}</span>
     </div>
   );
 }
 
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <div className="clq-section__head">
+        <div className="clq-section__title">Status</div>
+        <p className="clq-section__desc">A quick health check of your Clariq connection.</p>
+      </div>
+      {children}
+    </>
+  );
+}
+
+/** Plain-language latency label — no raw seconds shown to non-technical users. */
+function latencyLabel(latency: number | null): string {
+  if (latency === null || latency <= 0) return 'Not measured yet';
+  if (latency < 0.5) return 'Fast';
+  if (latency < 1.5) return 'Good';
+  return 'Slow';
+}
+
 export function HealthStatus({ status, loading, error }: Props) {
   if (loading) {
-    return (
-      <div className="mcp-field-group">
-        <label className="mcp-label">System Status &amp; Health Diagnostics</label>
-        <div className="mcp-skeleton-block" aria-label="Loading status…" />
-      </div>
-    );
+    return <Shell><div className="clq-skeleton" aria-label="Loading status…" /></Shell>;
   }
 
   if (error) {
     return (
-      <div className="mcp-field-group">
-        <label className="mcp-label">System Status &amp; Health Diagnostics</label>
-        <p className="mcp-inline-msg mcp-inline-msg--error">{error}</p>
-      </div>
+      <Shell>
+        <div className="clq-notice clq-notice--error"><AlertIcon /><div>{error}</div></div>
+      </Shell>
     );
   }
 
@@ -49,46 +59,42 @@ export function HealthStatus({ status, loading, error }: Props) {
 
   const { mode, warehouse_sync, bridge_latency, pending_jobs } = status;
 
-  const latencyLabel = bridge_latency !== null && bridge_latency > 0
-    ? `${bridge_latency.toFixed(2)}s (${bridge_latency < 0.5 ? 'Excellent' : bridge_latency < 1.5 ? 'Good' : 'Degraded'})`
-    : 'Measured on next connection test';
-
   if (mode === 'local_bridge') {
     return (
-      <div className="mcp-field-group">
-        <label className="mcp-label">System Status &amp; Health Diagnostics</label>
-        <div className="mcp-health-panel">
+      <Shell>
+        <div className="clq-diag">
           <Row
-            label="Connection Mode"
-            value={<><span className="mcp-status-dot mcp-status-dot--green" />Local Bridge — self-hosted &amp; private</>}
+            label="Mode"
+            value={<><span className="clq-dot clq-dot--green" />Private — self-hosted</>}
           />
-          <Row label="Bridge Latency" value={latencyLabel} />
-          <Row label="Plugin Version" value={`v${status.plugin_version}`} />
+          <Row label="Response speed" value={latencyLabel(bridge_latency)} />
+          <Row label="Plugin version" value={`v${status.plugin_version}`} />
         </div>
-      </div>
+      </Shell>
     );
   }
 
   return (
-    <div className="mcp-field-group">
-      <label className="mcp-label">System Status &amp; Health Diagnostics</label>
-
-      <div className="mcp-health-panel">
+    <Shell>
+      <div className="clq-diag">
         <Row
-          label="Clariq Sync Status"
+          label="Connection"
           value={
             <>
               <Dot ok={warehouse_sync.connected} />
               {warehouse_sync.connected
-                ? `Connected · Last synced: ${warehouse_sync.last_synced}`
-                : 'Disconnected — complete onboarding to connect'}
+                ? `Connected · updated ${warehouse_sync.last_synced}`
+                : 'Not connected'}
             </>
           }
         />
-        <Row label="Bridge Latency Index"   value={latencyLabel} />
-        <Row label="Action Scheduler Queue" value={`${pending_jobs} Pending Job${pending_jobs !== 1 ? 's' : ''}`} />
-        <Row label="Plugin Version"         value={`v${status.plugin_version}`} />
+        <Row label="Response speed" value={latencyLabel(bridge_latency)} />
+        <Row
+          label="Pending updates"
+          value={pending_jobs === 0 ? 'All caught up' : `${pending_jobs} in progress`}
+        />
+        <Row label="Plugin version" value={`v${status.plugin_version}`} />
       </div>
-    </div>
+    </Shell>
   );
 }

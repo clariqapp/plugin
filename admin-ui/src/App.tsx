@@ -1,12 +1,30 @@
 import React, { useState, useEffect } from '@wordpress/element';
+import type { ReactNode } from 'react';
 import { ConnectionModeToggle } from './components/ConnectionModeToggle';
 import { ConnectionPanel }      from './components/ConnectionPanel';
 import { BridgeSetupPanel }     from './components/BridgeSetupPanel';
 import { SyncControls }         from './components/SyncControls';
 import { HealthStatus }         from './components/HealthStatus';
+import {
+  CloudIcon, ShieldIcon, PlugIcon, SyncIcon, PulseIcon,
+  CheckIcon, ArrowRightIcon,
+} from './components/icons';
 import { saveSettings, ConnectionMode } from './lib/api';
 import { useStatus }            from './hooks/useStatus';
 import './style.css';
+
+/** The Clariq brand mark — the official favicon (arc "C" on an orange tile). */
+function BrandMark() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="14" fill="#F38020" />
+      <path d="M42 20.5a16 16 0 1 0 0 23" fill="none" stroke="#ffffff" strokeWidth="7" strokeLinecap="round" />
+      <circle cx="47" cy="32" r="3.5" fill="#ffffff" />
+    </svg>
+  );
+}
+
+type TabId = 'connection' | 'workspace' | 'status';
 
 export function App() {
   const {
@@ -20,10 +38,9 @@ export function App() {
     plan: initialPlan,
     maxBackfillMonths: initialMaxBackfillMonths,
     retentionDays: initialRetentionDays,
+    siteUrl,
   } = window.wcMcpData;
 
-  // Free (controlled-backfill) stores cap the sync window. Prefer the live
-  // status value (refreshed from /v1/stores/me) and fall back to the bootstrap.
   const { status, loading, error, refresh } = useStatus();
   const maxBackfillMonths =
     status?.max_backfill_months ?? initialMaxBackfillMonths ?? null;
@@ -42,39 +59,27 @@ export function App() {
   const [lastSyncAt,          setLastSyncAt]          = useState(initialLastSyncAt);
   const [saving,              setSaving]              = useState(false);
   const [saveMsg,             setSaveMsg]             = useState<string | null>(null);
+  const [activeTab,           setActiveTab]           = useState<TabId>('connection');
 
-  // Keep the selected range within the plan cap if the cap tightens (e.g. the
-  // status poll reports a newly-downgraded plan).
   useEffect(() => {
     if (maxBackfillMonths != null && backfillRange > maxBackfillMonths) {
       setBackfillRange(maxBackfillMonths);
     }
   }, [maxBackfillMonths]);
 
-  // Detect dashboard-side disconnects: if the status poll sees is_connected=false
-  // while we think we're connected, sync local state immediately.
   useEffect(() => {
     if (isConnected && status?.is_connected === false) {
       handleDisconnected();
     }
   }, [status?.is_connected]);
 
-  /** Called by ConnectionPanel after a successful disconnect. */
   function handleDisconnected() {
     setIsConnected(false);
-    // Reset all sync state so the UI reflects a clean slate immediately,
-    // without needing a page reload.
     setBackfillStatus('idle');
     setBackfillCompletedAt('');
     setLastSyncAt('');
   }
 
-  /**
-   * Switch connection mode. Persist immediately (not deferred to "Save Changes")
-   * so every mode-dependent surface — the bridge Test Connection endpoint, the
-   * connect panel, sync controls, and health diagnostics — reads one consistent
-   * value instead of a mix of saved/unsaved state. Optimistic with rollback.
-   */
   async function handleModeChange(next: ConnectionMode) {
     if (next === mode || saving || isConnected) return;
     const prev = mode;
@@ -83,9 +88,9 @@ export function App() {
     setSaveMsg(null);
     try {
       await saveSettings({ connection_mode: next });
-      refresh(); // re-pull /status so all panels agree on the new mode
+      refresh();
     } catch {
-      setMode(prev); // revert on failure
+      setMode(prev);
       setSaveMsg('Failed to switch connection mode. Please try again.');
     } finally {
       setSaving(false);
@@ -96,15 +101,8 @@ export function App() {
     setSaving(true);
     setSaveMsg(null);
     try {
-      // connection_mode is persisted immediately on toggle (handleModeChange),
-      // so the batched save only carries the sync preferences.
-      const payload: Parameters<typeof saveSettings>[0] = {
-        backfill_range: backfillRange,
-        sync_hour:      syncHour,
-      };
-
-      await saveSettings(payload);
-      setSaveMsg('Settings saved.');
+      await saveSettings({ backfill_range: backfillRange, sync_hour: syncHour });
+      setSaveMsg('Your changes have been saved.');
       refresh();
     } catch {
       setSaveMsg('Failed to save settings. Please try again.');
@@ -114,89 +112,189 @@ export function App() {
     }
   }
 
+  const isDirty =
+    backfillRange !== Number(initialRange) ||
+    syncHour !== Number(initialSyncHour ?? 2);
+
+  const displaySite = (siteUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+  // ── Status banner (at-a-glance) ─────────────────────────────────────────
+  let banner: { variant: string; icon: ReactNode; title: string; desc: ReactNode; pill: ReactNode };
+  if (mode === 'cloud_sync' && isConnected) {
+    banner = {
+      variant: 'connected',
+      icon: <CheckIcon />,
+      title: 'Your store is connected',
+      desc: <>Analytics are syncing to your Clariq workspace for <code>{displaySite || 'your store'}</code>.</>,
+      pill: <span className="clq-pill clq-pill--ok"><span className="clq-dot clq-dot--green" />Live</span>,
+    };
+  } else if (mode === 'cloud_sync') {
+    banner = {
+      variant: 'attention',
+      icon: <CloudIcon />,
+      title: 'Finish connecting your store',
+      desc: 'Link this store to Clariq to unlock your analytics dashboard and AI assistant.',
+      pill: <span className="clq-pill clq-pill--idle">Not connected</span>,
+    };
+  } else {
+    banner = {
+      variant: 'local',
+      icon: <ShieldIcon />,
+      title: 'Running in Private mode',
+      desc: 'Your data stays on this server. No account needed — connect an AI assistant from the Setup tab.',
+      pill: <span className="clq-pill clq-pill--running"><span className="clq-dot clq-dot--green" />Private</span>,
+    };
+  }
+
+  const workspaceTab = {
+    id: 'workspace' as const,
+    label: mode === 'cloud_sync' ? 'Data & Sync' : 'AI Setup',
+    icon: mode === 'cloud_sync' ? <SyncIcon /> : <PlugIcon />,
+  };
+
+  const tabs = [
+    { id: 'connection' as const, label: 'Connection', icon: <CloudIcon /> },
+    workspaceTab,
+    { id: 'status' as const, label: 'Status', icon: <PulseIcon /> },
+  ];
+
   return (
-    <div className="mcp-wrap">
-      {/* Header */}
-      <header className="mcp-header">
-        <div className="mcp-header__logo">
-          <span className="mcp-header__wordmark">Clariq<span className="mcp-header__dot">.</span></span>
+    <div className="clq">
+      {/* ── Top bar ── */}
+      <div className="clq-topbar">
+        <div className="clq-brand">
+          <span className="clq-brand__mark"><BrandMark /></span>
+          <div>
+            <div className="clq-brand__name">Clariq<span className="clq-dot">.</span></div>
+            <div className="clq-brand__sub">Analytics for WooCommerce</div>
+          </div>
         </div>
-        <span className="mcp-header__version">v{status?.plugin_version ?? '—'}</span>
-      </header>
+        <div className="clq-topbar__spacer" />
+        <span className="clq-version">Version {status?.plugin_version ?? '—'}</span>
+      </div>
 
-      {/* Card */}
-      <div className="mcp-card">
+      {/* ── Status banner ── */}
+      <div className={`clq-banner clq-banner--${banner.variant}`}>
+        <span className="clq-banner__icon">{banner.icon}</span>
+        <div className="clq-banner__body">
+          <div className="clq-banner__title">{banner.title}</div>
+          <div className="clq-banner__desc">{banner.desc}</div>
+        </div>
+        <div className="clq-banner__aside">{banner.pill}</div>
+      </div>
 
-        {/* Section 1 */}
-        <ConnectionModeToggle
-          mode={mode}
-          onChange={handleModeChange}
-          disabled={saving}
-          locked={isConnected}
-        />
+      {/* ── Tabs ── */}
+      <div className="clq-tabs" role="tablist">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={`clq-tab ${activeTab === tab.id ? 'clq-tab--active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.icon}
+            {tab.label}
+            {tab.id === 'connection' && mode === 'cloud_sync' && isConnected && (
+              <span className="clq-tab__dot" aria-hidden="true" />
+            )}
+          </button>
+        ))}
+      </div>
 
-        {/* Local bridge self-hosted setup — no account needed */}
-        {mode === 'local_bridge' && !isConnected && (
-          <>
-            <div className="mcp-divider" />
-            <BridgeSetupPanel />
-          </>
-        )}
+      {/* ── Panels ── */}
+      {activeTab === 'connection' && (
+        <div className="clq-panel" role="tabpanel">
+          <div className="clq-section">
+            <ConnectionModeToggle
+              mode={mode}
+              onChange={handleModeChange}
+              disabled={saving}
+              locked={isConnected}
+            />
+          </div>
 
-        {/* Cloud connect panel — only relevant in Cloud Sync mode */}
-        {mode === 'cloud_sync' && (
-          <>
-            <div className="mcp-divider" />
-            <ConnectionPanel onDisconnect={handleDisconnected} currentMode={mode} isConnected={isConnected} />
-          </>
-        )}
-
-        <div className="mcp-divider" />
-
-        {/* Section 3 */}
-        <SyncControls
-          mode={mode}
-          isConnected={isConnected}
-          backfillRange={backfillRange}
-          onRangeChange={r => setBackfillRange(clampRange(r))}
-          backfillStatus={isConnected ? backfillStatus : 'idle'}
-          backfillCompletedAt={backfillCompletedAt}
-          lastSyncAt={lastSyncAt}
-          syncHour={syncHour}
-          onHourChange={setSyncHour}
-          disabled={saving}
-          plan={plan}
-          retentionDays={retentionDays}
-          maxBackfillMonths={maxBackfillMonths}
-        />
-
-        <div className="mcp-divider" />
-
-        {/* Section 4 */}
-        <HealthStatus status={status} loading={loading} error={error} />
-
-        {/* Save bar — only when there are unsaved changes or a save result */}
-        {(backfillRange !== Number(initialRange) ||
-          syncHour !== Number(initialSyncHour ?? 2) ||
-          saveMsg) && (
-          <div className="mcp-save-bar">
-          {saveMsg && (
-            <span className={`mcp-inline-msg ${saveMsg.includes('Failed') ? 'mcp-inline-msg--error' : 'mcp-inline-msg--success'}`}>
-              {saveMsg}
-            </span>
+          {mode === 'cloud_sync' && (
+            <div className="clq-section">
+              <ConnectionPanel
+                onDisconnect={handleDisconnected}
+                currentMode={mode}
+                isConnected={isConnected}
+              />
+            </div>
           )}
+
+          {mode === 'local_bridge' && (
+            <div className="clq-section">
+              <div className="clq-notice clq-notice--info">
+                <PlugIcon />
+                <div>
+                  You're all set for private mode. To start asking questions about your store,
+                  open the <button type="button" className="clq-linklike" onClick={() => setActiveTab('workspace')}>AI&nbsp;Setup</button> tab
+                  and connect your AI assistant.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'workspace' && (
+        <div className="clq-panel" role="tabpanel">
+          {mode === 'cloud_sync' ? (
+            <SyncControls
+              mode={mode}
+              isConnected={isConnected}
+              backfillRange={backfillRange}
+              onRangeChange={r => setBackfillRange(clampRange(r))}
+              backfillStatus={isConnected ? backfillStatus : 'idle'}
+              backfillCompletedAt={backfillCompletedAt}
+              lastSyncAt={lastSyncAt}
+              syncHour={syncHour}
+              onHourChange={setSyncHour}
+              disabled={saving}
+              plan={plan}
+              retentionDays={retentionDays}
+              maxBackfillMonths={maxBackfillMonths}
+            />
+          ) : (
+            <BridgeSetupPanel />
+          )}
+        </div>
+      )}
+
+      {activeTab === 'status' && (
+        <div className="clq-panel" role="tabpanel">
+          <HealthStatus status={status} loading={loading} error={error} />
+        </div>
+      )}
+
+      {/* ── Save bar (only when there are unsaved sync preferences) ── */}
+      {(isDirty || saveMsg) && (
+        <div className="clq-savebar">
+          <span className="clq-savebar__note">
+            {saveMsg ? (
+              <span className={saveMsg.includes('Failed') ? 'clq-inline-err' : 'clq-inline-ok'}>
+                {!saveMsg.includes('Failed') && <CheckIcon className="clq-savebar__check" />}
+                {saveMsg}
+              </span>
+            ) : (
+              'You have unsaved changes.'
+            )}
+          </span>
           <button
             type="button"
-            className="mcp-btn mcp-btn--primary"
-            disabled={saving}
+            className="clq-btn clq-btn--primary"
+            disabled={saving || !isDirty}
             onClick={handleSave}
           >
-            {saving ? <span className="mcp-spinner" aria-hidden="true" /> : null}
-            {saving ? 'Saving…' : 'Save Changes'}
+            {saving ? <span className="clq-spinner" aria-hidden="true" /> : null}
+            {saving ? 'Saving…' : 'Save changes'}
+            {!saving && <ArrowRightIcon />}
           </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

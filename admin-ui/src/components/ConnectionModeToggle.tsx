@@ -1,4 +1,5 @@
 import React from '@wordpress/element';
+import { CloudIcon, ShieldIcon, CheckIcon, InfoIcon } from './icons';
 
 interface Props {
   mode:     'cloud_sync' | 'local_bridge';
@@ -7,57 +8,85 @@ interface Props {
   locked?:   boolean;
 }
 
+const MODES = [
+  {
+    id: 'cloud_sync' as const,
+    glyph: <CloudIcon />,
+    title: 'Clariq Cloud',
+    tag: 'Best for most stores',
+    desc: 'Your reports live in a shared dashboard your whole team can open from any browser.',
+    feats: [
+      'Ready-made analytics dashboard',
+      'Invite teammates and share access',
+      'Automatic daily updates',
+    ],
+  },
+  {
+    id: 'local_bridge' as const,
+    glyph: <ShieldIcon />,
+    title: 'Private (self-hosted)',
+    tag: 'Maximum privacy · Free',
+    desc: 'Your store data never leaves this server. Questions are answered on demand, right here.',
+    feats: [
+      'No account or sign-up needed',
+      'Nothing stored in the cloud',
+      'Connect your own AI assistant',
+    ],
+  },
+];
+
 export function ConnectionModeToggle({ mode, onChange, disabled, locked }: Props) {
   return (
-    <div className="mcp-field-group">
-      <label className="mcp-label">Connection Mode</label>
+    <>
+      <div className="clq-section__head">
+        <div className="clq-section__title">How would you like to connect?</div>
+        <p className="clq-section__desc">
+          Choose where your store’s analytics are handled. You can change this anytime while disconnected.
+        </p>
+      </div>
 
       {locked && (
-        <p className="mcp-inline-msg mcp-inline-msg--warning" style={{ marginBottom: '12px' }}>
-          Connection mode is locked while your store is connected. Disconnect first to change it.
-        </p>
+        <div className="clq-notice clq-notice--warning" style={{ marginBottom: 16 }}>
+          <InfoIcon />
+          <div>Your store is connected, so the connection method is locked. Disconnect first to switch.</div>
+        </div>
       )}
 
-      <div className="mcp-mode-cards">
-        {/* Cloud Sync */}
-        <button
-          type="button"
-          disabled={disabled || locked}
-          onClick={() => onChange('cloud_sync')}
-          className={`mcp-mode-card ${mode === 'cloud_sync' ? 'mcp-mode-card--active' : ''} ${locked ? 'mcp-mode-card--locked' : ''}`}
-        >
-          <div className="mcp-mode-card__header">
-            <div className={`mcp-mode-card__radio ${mode === 'cloud_sync' ? 'mcp-mode-card__radio--active' : ''}`}>
-              {mode === 'cloud_sync' && <span className="mcp-mode-card__radio-inner" />}
-            </div>
-            <span className="mcp-mode-card__badge">Recommended</span>
-          </div>
-          <strong className="mcp-mode-card__title">Cloud Sync — High-Performance Cloud Cluster</strong>
-          <p className="mcp-mode-card__desc">
-            Real-time, secure data streaming to Clariq's high-speed reporting cluster.
-            Optimized for sub-millisecond response rates.
-          </p>
-        </button>
+      <div className="clq-choice">
+        {MODES.map(m => {
+          const active = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              disabled={disabled || locked}
+              onClick={() => onChange(m.id)}
+              aria-pressed={active}
+              className={`clq-choice__card ${active ? 'clq-choice__card--active' : ''} ${locked ? 'clq-choice__card--locked' : ''}`}
+            >
+              <div className="clq-choice__top">
+                <span className="clq-choice__glyph">{m.glyph}</span>
+                <div>
+                  <div className="clq-choice__title">{m.title}</div>
+                  <div className="clq-choice__tag">{m.tag}</div>
+                </div>
+                <span className="clq-choice__radio" aria-hidden="true" />
+              </div>
 
-        {/* Local Bridge */}
-        <button
-          type="button"
-          disabled={disabled || locked}
-          onClick={() => onChange('local_bridge')}
-          className={`mcp-mode-card ${mode === 'local_bridge' ? 'mcp-mode-card--active' : ''} ${locked ? 'mcp-mode-card--locked' : ''}`}
-        >
-          <div className="mcp-mode-card__header">
-            <div className={`mcp-mode-card__radio ${mode === 'local_bridge' ? 'mcp-mode-card__radio--active' : ''}`}>
-              {mode === 'local_bridge' && <span className="mcp-mode-card__radio-inner" />}
-            </div>
-          </div>
-          <strong className="mcp-mode-card__title">Local Bridge — On-Premises Privacy</strong>
-          <p className="mcp-mode-card__desc">
-            Zero cloud storage. Queries execute entirely inside your local WordPress container
-            and are securely fetched on demand.
-          </p>
-        </button>
+              <p className="clq-choice__desc">{m.desc}</p>
+
+              <div className="clq-choice__feats">
+                {m.feats.map(f => (
+                  <span key={f} className="clq-choice__feat">
+                    <CheckIcon />
+                    {f}
+                  </span>
+                ))}
+              </div>
+            </button>
+          );
+        })}
       </div>
-    </div>
+    </>
   );
 }
