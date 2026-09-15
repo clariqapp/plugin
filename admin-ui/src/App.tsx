@@ -100,7 +100,6 @@ export function App() {
       <header className="mcp-header">
         <div className="mcp-header__logo">
           <span className="mcp-header__wordmark">Clariq<span className="mcp-header__dot">.</span></span>
-          <span className="mcp-header__chip">WooCommerce Analytics MCP</span>
         </div>
         <span className="mcp-header__version">v{status?.plugin_version ?? '—'}</span>
       </header>

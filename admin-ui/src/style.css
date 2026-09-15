@@ -114,19 +114,6 @@
   color: var(--mcp-primary);
 }
 
-.mcp-header__chip {
-  font-family: var(--mcp-font-mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--mcp-text-2);
-  background: var(--mcp-bg);
-  border: 1px solid var(--mcp-border);
-  padding: 4px 10px;
-  border-radius: var(--mcp-radius-pill);
-}
-
 .mcp-header__version {
   font-size: 12px;
   font-weight: 500;
