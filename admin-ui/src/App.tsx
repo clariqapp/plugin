@@ -69,19 +69,39 @@ export function App() {
     setLastSyncAt('');
   }
 
+  /**
+   * Switch connection mode. Persist immediately (not deferred to "Save Changes")
+   * so every mode-dependent surface — the bridge Test Connection endpoint, the
+   * connect panel, sync controls, and health diagnostics — reads one consistent
+   * value instead of a mix of saved/unsaved state. Optimistic with rollback.
+   */
+  async function handleModeChange(next: ConnectionMode) {
+    if (next === mode || saving || isConnected) return;
+    const prev = mode;
+    setMode(next);
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await saveSettings({ connection_mode: next });
+      refresh(); // re-pull /status so all panels agree on the new mode
+    } catch {
+      setMode(prev); // revert on failure
+      setSaveMsg('Failed to switch connection mode. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     setSaveMsg(null);
     try {
+      // connection_mode is persisted immediately on toggle (handleModeChange),
+      // so the batched save only carries the sync preferences.
       const payload: Parameters<typeof saveSettings>[0] = {
         backfill_range: backfillRange,
         sync_hour:      syncHour,
       };
-
-      // Do not send connection_mode when connected — backend rejects it (403).
-      if (!isConnected) {
-        payload.connection_mode = mode;
-      }
 
       await saveSettings(payload);
       setSaveMsg('Settings saved.');
@@ -110,7 +130,7 @@ export function App() {
         {/* Section 1 */}
         <ConnectionModeToggle
           mode={mode}
-          onChange={setMode}
+          onChange={handleModeChange}
           disabled={saving}
           locked={isConnected}
         />
@@ -123,10 +143,13 @@ export function App() {
           </>
         )}
 
-        <div className="mcp-divider" />
-
-        {/* Section 2 */}
-        <ConnectionPanel onDisconnect={handleDisconnected} currentMode={mode} isConnected={isConnected} />
+        {/* Cloud connect panel — only relevant in Cloud Sync mode */}
+        {mode === 'cloud_sync' && (
+          <>
+            <div className="mcp-divider" />
+            <ConnectionPanel onDisconnect={handleDisconnected} currentMode={mode} isConnected={isConnected} />
+          </>
+        )}
 
         <div className="mcp-divider" />
 
@@ -136,7 +159,7 @@ export function App() {
           isConnected={isConnected}
           backfillRange={backfillRange}
           onRangeChange={r => setBackfillRange(clampRange(r))}
-          backfillStatus={backfillStatus}
+          backfillStatus={isConnected ? backfillStatus : 'idle'}
           backfillCompletedAt={backfillCompletedAt}
           lastSyncAt={lastSyncAt}
           syncHour={syncHour}
@@ -153,8 +176,7 @@ export function App() {
         <HealthStatus status={status} loading={loading} error={error} />
 
         {/* Save bar — only when there are unsaved changes or a save result */}
-        {(mode !== initialMode ||
-          backfillRange !== Number(initialRange) ||
+        {(backfillRange !== Number(initialRange) ||
           syncHour !== Number(initialSyncHour ?? 2) ||
           saveMsg) && (
           <div className="mcp-save-bar">

@@ -10,6 +10,15 @@ namespace Clariq\McpPlugin\Admin;
  */
 final class SettingsPage {
 
+    /**
+     * Number of consecutive 401 responses from the SaaS health-check before the
+     * plugin tears down local credentials. Prevents a single transient 401
+     * (API redeploy, post-connect race, proxy blip) from wiping a good
+     * connection, while still detecting a genuine dashboard-side disconnect
+     * within a poll cycle or two (~30s each).
+     */
+    private const AUTH_FAIL_THRESHOLD = 2;
+
     public function register(): void {
         add_action('admin_menu', [$this, 'add_menu_page']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
@@ -183,6 +192,8 @@ final class SettingsPage {
 
                 if ($code === 200 && !empty($body['is_active'])) {
                     $is_connected = true;
+                    // A good check clears any accumulated auth-failure strikes.
+                    delete_option('wc_mcp_auth_fail_count');
                     // Persist the owning org's plan + effective data-retention
                     // window so sync + admin UI can self-enforce the free-tier
                     // "controlled backfill" cap (30 days). null/absent = unlimited.
@@ -196,18 +207,44 @@ final class SettingsPage {
                         delete_option('wc_mcp_retention_days'); // paid → unlimited
                     }
                 } elseif ($code === 401) {
-                    // Only a definitive 401 Unauthorized means the token is genuinely
-                    // invalid. Any other non-200 (5xx, timeout, etc.) is treated
-                    // optimistically to avoid wiping credentials on transient API errors.
-                    delete_option('wc_mcp_tenant_id');
-                    delete_option('wc_mcp_auth_token');
-                    delete_option('wc_mcp_bridge_secret');
-                    delete_option('wc_mcp_bridge_token_hash');
+                    // A 401 means the token was rejected — but a SINGLE 401 is not
+                    // enough to wipe a working connection. Transient causes (an API
+                    // redeploy, a brief race right after (re)connecting, a proxy
+                    // hiccup) can all produce a one-off 401. Only tear down local
+                    // credentials after the failure persists across consecutive
+                    // polls (~30s apart), so a genuine dashboard-side disconnect is
+                    // still detected within a minute, without nuking on a blip.
+                    $strikes = (int) get_option('wc_mcp_auth_fail_count', 0) + 1;
+                    if ($strikes >= self::AUTH_FAIL_THRESHOLD) {
+                        delete_option('wc_mcp_auth_fail_count');
+                        delete_option('wc_mcp_tenant_id');
+                        delete_option('wc_mcp_auth_token');
+                        delete_option('wc_mcp_bridge_secret');
+                        delete_option('wc_mcp_bridge_token_hash');
+                        // Tear down any in-flight backfill/delta jobs + cursors so
+                        // the UI doesn't show a phantom "in progress" backfill or a
+                        // stuck pending job after the connection is gone.
+                        self::reset_sync_state();
+                        // $is_connected stays false → UI shows the reconnect prompt.
+                    } else {
+                        // Not yet confident it's a real revocation — stay optimistic
+                        // and preserve credentials so the next poll can confirm.
+                        update_option('wc_mcp_auth_fail_count', $strikes);
+                        $is_connected = true;
+                    }
                 } else {
                     // 5xx or unexpected — keep credentials, show as connected.
                     $is_connected = true;
                 }
             }
+        }
+
+        // Self-heal: when in cloud mode with no live connection (auto-disconnected,
+        // or an abandoned connect that never completed), make sure no stale backfill
+        // cursor or scheduled jobs linger — otherwise the UI reports a phantom
+        // "In progress…" backfill and a pending job while showing "Disconnected".
+        if ('cloud_sync' === $mode && !$is_connected && self::has_stale_sync_state()) {
+            self::reset_sync_state();
         }
 
         $pending_jobs = 0;
@@ -237,7 +274,6 @@ final class SettingsPage {
             'retention_days'      => self::retention_days(),        // null = unlimited history
             'max_backfill_months' => self::max_backfill_months(),   // null = unlimited
             'plugin_version'     => WC_MCP_VERSION,
-            'signing_key_defined' => defined('WC_MCP_CLARIQ_SIGNING_KEY'),
         ]);
     }
 
@@ -391,7 +427,7 @@ final class SettingsPage {
         register_rest_route('wc-mcp/v1', '/connect/callback', [
             'methods'             => \WP_REST_Server::READABLE,
             'callback'            => ['\Clariq\McpPlugin\Onboarding\ConnectFlow', 'handle_callback'],
-            'permission_callback' => '__return_true', // Public — verified by state+sig
+            'permission_callback' => '__return_true', // Public — verified by state + single-use code exchange
         ]);
 
         // Disconnect: clears local credentials only (soft disconnect).
@@ -443,22 +479,50 @@ final class SettingsPage {
         delete_option('wc_mcp_auth_token');
         delete_option('wc_mcp_bridge_secret');
         delete_option('wc_mcp_bridge_token_hash');
+        delete_option('wc_mcp_auth_fail_count');
 
         // ── Sync state ───────────────────────────────────────────────────────
         // Clear all sync state so a fresh reconnect starts from a clean slate.
         // Merchant preferences (connection_mode, backfill_range) are intentionally kept.
+        self::reset_sync_state();
+
+        return new \WP_REST_Response(['success' => true, 'message' => 'Disconnected successfully.']);
+    }
+
+    /**
+     * Clears backfill/delta sync cursors and cancels any in-flight or pending
+     * Action Scheduler jobs. Merchant preferences (connection_mode, backfill_range,
+     * sync_hour) are intentionally preserved. Shared by explicit disconnect, the
+     * auto-disconnect (repeated-401) path, and the disconnected-state self-heal.
+     */
+    private static function reset_sync_state(): void {
         delete_option('wc_mcp_backfill_complete');
         delete_option('wc_mcp_backfill_offset');
         delete_option('wc_mcp_last_sync_timestamp');
+        delete_option('wc_mcp_sync_error');
 
-        // ── Action Scheduler jobs ────────────────────────────────────────────
-        // Cancel any in-flight or pending jobs so they don't fire with stale auth.
         if (function_exists('as_unschedule_all_actions')) {
             as_unschedule_all_actions('wc_mcp_backfill_batch', [], 'wc-mcp');
             as_unschedule_all_actions('wc_mcp_delta_sync',     [], 'wc-mcp');
         }
+    }
 
-        return new \WP_REST_Response(['success' => true, 'message' => 'Disconnected successfully.']);
+    /**
+     * True when backfill/sync artifacts exist (a live cursor, a completion flag,
+     * or scheduled jobs) — used to decide whether a disconnected store needs its
+     * stale sync state cleaned up.
+     */
+    private static function has_stale_sync_state(): bool {
+        if (get_option('wc_mcp_backfill_offset') !== false
+            || get_option('wc_mcp_backfill_complete')
+            || get_option('wc_mcp_last_sync_timestamp')) {
+            return true;
+        }
+        if (function_exists('as_has_scheduled_action')) {
+            return as_has_scheduled_action('wc_mcp_backfill_batch', [], 'wc-mcp')
+                || as_has_scheduled_action('wc_mcp_delta_sync', [], 'wc-mcp');
+        }
+        return false;
     }
 
     /**

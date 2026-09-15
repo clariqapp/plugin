@@ -13,23 +13,13 @@ use Clariq\McpPlugin\Tests\TestCase;
  *
  * Verifies the OAuth-style connect flow:
  *  - State token generation and storage
- *  - HMAC signature verification on callback
- *  - Error handling for invalid/expired state
+ *  - CSRF state validation on callback
  *
- * Note: handle_callback() calls exit() at the end which makes it hard to test
- * in unit tests. We test the verification logic (HMAC, state) directly and
- * the initiate() method which is fully testable.
+ * Note: handle_callback() performs a server-to-server code exchange and calls
+ * exit() at the end, which makes it hard to test end-to-end in unit tests. We
+ * test the state-validation logic directly and the fully-testable initiate().
  */
 class ConnectFlowTest extends TestCase {
-
-    private const SIGNING_KEY = 'dev-signing-key-change-in-prod-32chars';
-
-    protected function setUp(): void {
-        parent::setUp();
-        if (!defined('WC_MCP_CLARIQ_SIGNING_KEY')) {
-            define('WC_MCP_CLARIQ_SIGNING_KEY', self::SIGNING_KEY);
-        }
-    }
 
     // -----------------------------------------------------------------------
     // initiate()
@@ -135,56 +125,6 @@ class ConnectFlowTest extends TestCase {
 
         $this->assertSame('wc_mcp_connect_state', $transient_key);
         $this->assertSame('my-state-token', $transient_value);
-    }
-
-    // -----------------------------------------------------------------------
-    // HMAC signature verification (tested directly, not via handle_callback)
-    // -----------------------------------------------------------------------
-
-    public function test_hmac_signature_matches_saaS_api_format(): void {
-        $state = 'test-state-123';
-        $tenant_id = 'tenant-uuid-456';
-        $auth_token = 'raw-auth-token-789';
-        $bridge_secret = 'bridge-secret-abc';
-
-        $sig = hash_hmac(
-            'sha256',
-            "{$state}.{$tenant_id}.{$auth_token}.{$bridge_secret}",
-            self::SIGNING_KEY
-        );
-
-        // Verify the HMAC is deterministic
-        $sig2 = hash_hmac(
-            'sha256',
-            "{$state}.{$tenant_id}.{$auth_token}.{$bridge_secret}",
-            self::SIGNING_KEY
-        );
-        $this->assertSame($sig, $sig2);
-    }
-
-    public function test_hmac_verification_fails_with_wrong_key(): void {
-        $state = 's';
-        $tenant_id = 't';
-        $auth_token = 'a';
-        $bridge_secret = 'b';
-
-        $sig = hash_hmac('sha256', "{$state}.{$tenant_id}.{$auth_token}.{$bridge_secret}", self::SIGNING_KEY);
-        $wrong_sig = hash_hmac('sha256', "{$state}.{$tenant_id}.{$auth_token}.{$bridge_secret}", 'wrong-key');
-
-        $this->assertNotSame($sig, $wrong_sig);
-    }
-
-    public function test_hmac_verification_fails_with_tampered_params(): void {
-        $sig = hash_hmac('sha256', 'state.tenant.token.secret', self::SIGNING_KEY);
-        $tampered = hash_hmac('sha256', 'state.tenant.TOKEN.secret', self::SIGNING_KEY);
-
-        $this->assertNotSame($sig, $tampered);
-    }
-
-    public function test_hmac_signature_is_64_hex_chars(): void {
-        $sig = hash_hmac('sha256', 'test-data', self::SIGNING_KEY);
-        $this->assertSame(64, strlen($sig));
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $sig);
     }
 
     // -----------------------------------------------------------------------

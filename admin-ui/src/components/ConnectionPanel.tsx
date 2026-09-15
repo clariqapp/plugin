@@ -9,10 +9,10 @@ interface Props {
 
 /** Human-readable messages for the connect_error codes the callback redirects back with. */
 const CONNECT_ERROR_MESSAGES: Record<string, string> = {
-  invalid_state:      'Connection attempt expired or was replayed. Please click Connect again.',
-  missing_params:     'The connection response was incomplete. Please try again.',
-  signing_key_missing:'This site is missing its signing key (WC_MCP_CLARIQ_SIGNING_KEY). Contact your administrator.',
-  invalid_signature:  'The connection response failed signature verification. Please try again — if it persists, verify the signing key matches your Clariq account.',
+  invalid_state:       'Connection attempt expired or was replayed. Please click Connect again.',
+  missing_params:      'The connection response was incomplete. Please try again.',
+  exchange_unreachable:'Could not reach Clariq to finish connecting. Check that this site can reach the Clariq API, then try again.',
+  exchange_failed:     'Finishing the connection failed. Please click Connect and try again.',
 };
 
 export function ConnectionPanel({ onDisconnect, currentMode, isConnected }: Props) {

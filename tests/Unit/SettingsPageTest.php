@@ -70,12 +70,17 @@ final class SettingsPageTest extends \Clariq\McpPlugin\Tests\TestCase {
         $this->assertEquals('t-abc', $data['tenant_id']);
     }
 
-    public function test_get_status_cleared_on_401(): void {
+    public function test_get_status_optimistic_on_first_401(): void {
+        // A single 401 must NOT tear down a working connection — it takes
+        // AUTH_FAIL_THRESHOLD (2) consecutive failures. First strike stays
+        // optimistically connected and records the strike.
         Functions\stubs([
             'get_option' => self::option_stub([
-                'wc_mcp_tenant_id' => 't-abc',
-                'wc_mcp_auth_token' => 'tok_expired',
+                'wc_mcp_tenant_id'       => 't-abc',
+                'wc_mcp_auth_token'      => 'tok_expired',
+                'wc_mcp_auth_fail_count' => 0,
             ]),
+            'update_option' => true,
             'delete_option' => true,
         ]);
 
@@ -90,7 +95,67 @@ final class SettingsPageTest extends \Clariq\McpPlugin\Tests\TestCase {
         $response = $this->page->get_status($request);
         $data = $response->get_data();
 
+        $this->assertTrue($data['is_connected']);
+    }
+
+    public function test_get_status_cleared_on_repeated_401(): void {
+        // Second consecutive 401 (strike count already at threshold-1) reaches
+        // AUTH_FAIL_THRESHOLD and clears credentials.
+        $deleted = [];
+        Functions\stubs([
+            'get_option' => self::option_stub([
+                'wc_mcp_tenant_id'       => 't-abc',
+                'wc_mcp_auth_token'      => 'tok_expired',
+                'wc_mcp_auth_fail_count' => 1,
+            ]),
+            'update_option' => true,
+            'delete_option' => function (string $key) use (&$deleted) {
+                $deleted[] = $key;
+                return true;
+            },
+        ]);
+
+        \Patchwork\redefine('wp_remote_get', function (string $url, array $args = []): array {
+            return [
+                'response' => ['code' => 401],
+                'body'     => json_encode(['detail' => 'Unauthorized']),
+            ];
+        });
+
+        $request = new WP_REST_Request();
+        $response = $this->page->get_status($request);
+        $data = $response->get_data();
+
         $this->assertFalse($data['is_connected']);
+        $this->assertContains('wc_mcp_tenant_id', $deleted);
+        $this->assertContains('wc_mcp_auth_token', $deleted);
+    }
+
+    public function test_get_status_self_heals_stale_sync_when_disconnected(): void {
+        // Cloud mode, no live connection, but a stale backfill cursor lingers
+        // (e.g. after an abandoned connect / auto-disconnect). get_status must
+        // clear it so the UI doesn't show a phantom "in progress" backfill.
+        $deleted = [];
+        Functions\stubs([
+            'get_option' => self::option_stub([
+                'wc_mcp_connection_mode'  => 'cloud_sync',
+                'wc_mcp_tenant_id'        => '',
+                'wc_mcp_backfill_offset'  => '250',
+            ]),
+            'update_option' => true,
+            'delete_option' => function (string $key) use (&$deleted) {
+                $deleted[] = $key;
+                return true;
+            },
+        ]);
+
+        $request = new WP_REST_Request();
+        $response = $this->page->get_status($request);
+        $data = $response->get_data();
+
+        $this->assertFalse($data['is_connected']);
+        $this->assertContains('wc_mcp_backfill_offset', $deleted);
+        $this->assertContains('wc_mcp_last_sync_timestamp', $deleted);
     }
 
     public function test_get_status_optimistic_on_500(): void {

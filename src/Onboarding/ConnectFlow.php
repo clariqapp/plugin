@@ -25,14 +25,6 @@ final class ConnectFlow {
      * @return \WP_REST_Response
      */
     public static function initiate(\WP_REST_Request $request): \WP_REST_Response {
-        // Block connect flow if signing key is not configured.
-        if (!defined('WC_MCP_CLARIQ_SIGNING_KEY')) {
-            return new \WP_REST_Response([
-                'error'   => 'signing_key_missing',
-                'message' => 'WC_MCP_CLARIQ_SIGNING_KEY is not defined. Add define(\'WC_MCP_CLARIQ_SIGNING_KEY\', \'your-key\'); to wp-config.php before connecting.',
-            ], 503);
-        }
-
         // Persist the mode the user has selected in React (if supplied).
         $mode = sanitize_text_field($request->get_param('connection_mode') ?? '');
         if (in_array($mode, ['cloud_sync', 'local_bridge'], true)) {
@@ -59,51 +51,83 @@ final class ConnectFlow {
 
     /**
      * REST callback: GET /wp-json/wc-mcp/v1/connect/callback
-     * Receives credentials from Clariq, verifies them, stores in wp_options.
+     * Receives a single-use ``code`` from Clariq, verifies the CSRF ``state``,
+     * then exchanges the code server-to-server for the store credentials. No
+     * shared signing key is involved — the response is trusted because this
+     * request goes directly to the known Clariq API host over TLS.
      */
     public static function handle_callback(\WP_REST_Request $request): void {
-        $tenant_id     = sanitize_text_field($request->get_param('tenant_id') ?? '');
-        $auth_token    = sanitize_text_field($request->get_param('auth_token') ?? '');
-        $bridge_secret = sanitize_text_field($request->get_param('bridge_secret') ?? '');
-        $state         = sanitize_text_field($request->get_param('state') ?? '');
-        $sig           = sanitize_text_field($request->get_param('sig') ?? '');
+        $state = sanitize_text_field($request->get_param('state') ?? '');
+        $code  = sanitize_text_field($request->get_param('code') ?? '');
 
-        // Verify state
+        // Verify state (CSRF). Keep the transient until the exchange succeeds so a
+        // transient network blip on exchange doesn't burn the attempt permanently.
         $stored_state = get_transient(self::STATE_OPTION);
         if (!$stored_state || !hash_equals($stored_state, $state)) {
             self::redirect_with_error('invalid_state');
             return;
         }
-        delete_transient(self::STATE_OPTION);
 
-        // All params must be present
-        if (empty($tenant_id) || empty($auth_token) || empty($bridge_secret)) {
+        if (empty($code)) {
             self::redirect_with_error('missing_params');
             return;
         }
 
-        // Verify Clariq's signature
-        // Note: CLARIQ_SIGNING_KEY must match the SaaS API's CLARIQ_SIGNING_KEY
-        if (!defined('WC_MCP_CLARIQ_SIGNING_KEY')) {
-            self::redirect_with_error('signing_key_missing');
+        // ── Exchange the code for credentials (server-to-server) ─────────────
+        $exchange_url = rtrim(self::saas_internal_url(), '/') . '/v1/connect/exchange';
+        $response = wp_remote_post($exchange_url, [
+            'timeout' => 15,
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Accept'       => 'application/json',
+            ],
+            'body'    => wp_json_encode([
+                'code'      => $code,
+                'store_url' => home_url(),
+            ]),
+        ]);
+
+        if (is_wp_error($response)) {
+            self::log(
+                'Connect exchange unreachable at ' . $exchange_url . ': ' . $response->get_error_message(),
+                'error'
+            );
+            self::redirect_with_error('exchange_unreachable');
             return;
         }
-        $signing_key = WC_MCP_CLARIQ_SIGNING_KEY;
-        $expected_sig = hash_hmac(
-            'sha256',
-            "{$state}.{$tenant_id}.{$auth_token}.{$bridge_secret}",
-            $signing_key
-        );
-        if (!hash_equals($expected_sig, $sig)) {
-            self::redirect_with_error('invalid_signature');
+
+        $status = wp_remote_retrieve_response_code($response);
+        $body   = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($status !== 200 || !is_array($body) || empty($body['tenant_id']) || empty($body['auth_token']) || empty($body['bridge_secret'])) {
+            self::log(
+                sprintf(
+                    'Connect exchange failed: POST %s returned HTTP %s. Detail: %s',
+                    $exchange_url,
+                    $status,
+                    is_array($body) && isset($body['detail']) ? (string) $body['detail'] : substr((string) wp_remote_retrieve_body($response), 0, 200)
+                ),
+                'error'
+            );
+            self::redirect_with_error('exchange_failed');
             return;
         }
+
+        // Exchange succeeded — now the state can be safely consumed.
+        delete_transient(self::STATE_OPTION);
+
+        $tenant_id     = sanitize_text_field((string) $body['tenant_id']);
+        $auth_token    = sanitize_text_field((string) $body['auth_token']);
+        $bridge_secret = sanitize_text_field((string) $body['bridge_secret']);
 
         // Store credentials
         update_option('wc_mcp_tenant_id',        $tenant_id,                     false);
         update_option('wc_mcp_auth_token',        $auth_token,                    false);
         update_option('wc_mcp_bridge_secret',     $bridge_secret,                 false);
         update_option('wc_mcp_bridge_token_hash', hash('sha256', $bridge_secret), false);
+        // Clear any stale sync-error / auth-failure flags from a previous connection.
+        delete_option('wc_mcp_sync_error');
+        delete_option('wc_mcp_auth_fail_count');
 
         // Kick off a fresh historical backfill and schedule the daily delta sync.
         // Only applicable for Cloud Sync mode — Local Bridge queries data live
@@ -118,8 +142,25 @@ final class ConnectFlow {
         exit;
     }
 
+    /**
+     * SaaS API base URL for server-to-server calls (the internal/API URL, not
+     * the dashboard URL). Filterable; falls back to the dashboard URL constant.
+     */
+    private static function saas_internal_url(): string {
+        return (string) apply_filters(
+            'wc_mcp_clariq_internal_url',
+            defined('WC_MCP_CLARIQ_INTERNAL_URL') ? WC_MCP_CLARIQ_INTERNAL_URL : WC_MCP_CLARIQ_URL
+        );
+    }
+
     private static function redirect_with_error(string $code): void {
         wp_redirect(admin_url('admin.php?page=wc-analytics-mcp&connect_error=' . $code));
         exit;
+    }
+
+    private static function log(string $message, string $level = 'info'): void {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->log($level, $message, ['source' => 'wc-analytics-mcp']);
+        }
     }
 }

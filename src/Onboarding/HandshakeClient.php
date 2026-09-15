@@ -82,6 +82,8 @@ final class HandshakeClient {
             'wc_mcp_last_sync_timestamp',
             'wc_mcp_backfill_offset',
             'wc_mcp_bridge_latency',
+            'wc_mcp_auth_fail_count',
+            'wc_mcp_sync_error',
         ];
 
         foreach ($keys as $key) {
