@@ -31,12 +31,17 @@ define('WC_MCP_BASENAME',    plugin_basename(__FILE__));
 if (!defined('WC_MCP_CLARIQ_URL')) {
     define('WC_MCP_CLARIQ_URL', apply_filters('wc_mcp_clariq_url', 'https://app.clariqapp.com'));
 }
-// Server-to-server URL (wp_remote_request). In Docker, localhost inside the container
-// points to the container itself — not the host. Override this constant in wp-config.php
-// (e.g. http://host.docker.internal:8000) when WordPress runs inside Docker.
-// Falls back to WC_MCP_CLARIQ_URL when not explicitly defined (works in production).
+// Server-to-server API base (wp_remote_request): connect code exchange, order
+// ingest, and the connection health-check all target this. It is the API host
+// (api.clariqapp.com), NOT the dashboard (app.clariqapp.com) — they are separate
+// services, so this must not fall back to WC_MCP_CLARIQ_URL.
+//
+// Production customers need no configuration: the default below is correct.
+// Only override it (in wp-config.php, or via the wc_mcp_clariq_internal_url
+// filter) for local dev — e.g. http://host.docker.internal:8000 when WordPress
+// runs inside Docker and the API runs on the host.
 if (!defined('WC_MCP_CLARIQ_INTERNAL_URL')) {
-    define('WC_MCP_CLARIQ_INTERNAL_URL', WC_MCP_CLARIQ_URL);
+    define('WC_MCP_CLARIQ_INTERNAL_URL', apply_filters('wc_mcp_clariq_internal_url', 'https://api.clariqapp.com'));
 }
 
 // Declare HPOS compatibility.
