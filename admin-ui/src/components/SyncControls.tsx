@@ -1,6 +1,6 @@
 import React, { useState } from '@wordpress/element';
 import { syncNow } from '../lib/api';
-import { CheckIcon, AlertIcon, InfoIcon, ShieldIcon, SparkIcon } from './icons';
+import { CheckIcon, AlertIcon, InfoIcon, ShieldIcon, SparkIcon, SyncIcon } from './icons';
 
 interface Props {
   mode:                'cloud_sync' | 'local_bridge';
@@ -9,6 +9,11 @@ interface Props {
   onRangeChange:       (range: number) => void;
   backfillStatus:      'idle' | 'running' | 'complete';
   backfillCompletedAt: string;
+  backfillProcessed:   number;
+  backfillTotal:       number;
+  backfillWindow:      string;
+  onRefreshStatus:     () => void;
+  refreshingStatus:    boolean;
   lastSyncAt:          string;
   syncHour:            number;
   onHourChange:        (hour: number) => void;
@@ -39,6 +44,11 @@ export function SyncControls({
   onRangeChange,
   backfillStatus,
   backfillCompletedAt,
+  backfillProcessed,
+  backfillTotal,
+  backfillWindow,
+  onRefreshStatus,
+  refreshingStatus,
   lastSyncAt,
   syncHour,
   onHourChange,
@@ -108,6 +118,11 @@ export function SyncControls({
     return <span className="clq-pill clq-pill--idle">Not started</span>;
   })();
 
+  const importPct = backfillTotal > 0
+    ? Math.min(100, Math.round((backfillProcessed / backfillTotal) * 100))
+    : (backfillStatus === 'complete' ? 100 : 0);
+  const showImportProgress = isConnected && (backfillStatus === 'running' || backfillStatus === 'complete');
+
   // ── Cloud Sync ────────────────────────────────────────────────────────────
   return (
     <>
@@ -136,8 +151,55 @@ export function SyncControls({
                 ))}
               </select>
             </div>
-            <div style={{ paddingBottom: 10 }}>{backfillPill}</div>
+            <div className="clq-import-status">
+              {backfillPill}
+              <button
+                type="button"
+                className="clq-iconbtn"
+                onClick={onRefreshStatus}
+                disabled={refreshingStatus}
+                aria-label="Refresh import status"
+                title="Refresh import status"
+              >
+                <SyncIcon className={refreshingStatus ? 'clq-spin' : undefined} />
+              </button>
+            </div>
           </div>
+
+          {showImportProgress && (
+            <div className="clq-import-progress" style={{ marginTop: 14 }}>
+              <div className="clq-import-progress__head">
+                <span className="clq-import-progress__count">
+                  {backfillTotal > 0
+                    ? `${backfillProcessed.toLocaleString()} / ${backfillTotal.toLocaleString()} orders imported`
+                    : `${backfillProcessed.toLocaleString()} orders imported`}
+                </span>
+                <span className="clq-import-progress__pct">{importPct}%</span>
+              </div>
+              <div
+                className="clq-progress"
+                role="progressbar"
+                aria-valuenow={importPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className={`clq-progress__bar${backfillStatus === 'complete' ? ' clq-progress__bar--done' : ''}`}
+                  style={{ width: `${importPct}%` }}
+                />
+              </div>
+              <div className="clq-import-progress__meta">
+                {backfillWindow && <span>Covers {backfillWindow}</span>}
+                {backfillStatus === 'complete' && backfillCompletedAt && (
+                  <span> · Finished {backfillCompletedAt}</span>
+                )}
+                {backfillStatus === 'running' && backfillTotal === 0 && (
+                  <span> · Counting orders…</span>
+                )}
+                <span> · Use Refresh to update</span>
+              </div>
+            </div>
+          )}
 
           {isCapped && (
             <div className="clq-notice clq-notice--info" style={{ marginTop: 14 }}>

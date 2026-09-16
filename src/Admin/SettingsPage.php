@@ -273,6 +273,7 @@ final class SettingsPage {
             'plan'                => get_option('wc_mcp_plan', 'free'),
             'retention_days'      => self::retention_days(),        // null = unlimited history
             'max_backfill_months' => self::max_backfill_months(),   // null = unlimited
+            'backfill'           => self::backfill_progress(),      // live import progress for the UI
             'plugin_version'     => WC_MCP_VERSION,
         ]);
     }
@@ -576,6 +577,68 @@ final class SettingsPage {
         }
 
         return 'idle';
+    }
+
+    /**
+     * Live progress of the historical import, for the admin UI.
+     *
+     * `processed` is the running cursor (orders sent so far) while the import is
+     * in flight, and the final total once complete (the cursor option is deleted
+     * on completion). `total` is counted on the first batch. `window_label` is the
+     * date range the import targets. Together these let the UI show a progress bar
+     * and "X / Y orders" without any realtime channel — the merchant refreshes.
+     *
+     * @return array{status:string, processed:int, total:int, completed_at:string, window_label:string}
+     */
+    private static function backfill_progress(): array {
+        $status = self::get_backfill_status();
+        $total  = (int) get_option('wc_mcp_backfill_total', 0);
+        $offset = get_option('wc_mcp_backfill_offset', false);
+
+        if ($status === 'complete') {
+            $processed = $total;
+        } else {
+            $processed = ($offset !== false) ? (int) $offset : 0;
+        }
+
+        return [
+            'status'       => $status,
+            'processed'    => $processed,
+            'total'        => $total,
+            'completed_at' => self::format_option_timestamp('wc_mcp_backfill_complete'),
+            'window_label' => self::backfill_window_label(),
+        ];
+    }
+
+    /**
+     * Human-readable date range the historical import targets: from the
+     * (retention-clamped) range floor to today. Mirrors the $since computation
+     * in BackfillWorker::process_batch() so the UI shows exactly what was pulled.
+     */
+    private static function backfill_window_label(): string {
+        $range    = (int) get_option('wc_mcp_backfill_range', 12);
+        $since_ts = strtotime("-{$range} months");
+
+        // Free (controlled-backfill) plans clamp the window to the retention floor.
+        $retention_days = (int) get_option('wc_mcp_retention_days', 0);
+        if ($retention_days > 0) {
+            $floor = strtotime("-{$retention_days} days");
+            if ($floor !== false && $floor > $since_ts) {
+                $since_ts = $floor;
+            }
+        }
+
+        if ($since_ts === false) {
+            return '';
+        }
+
+        // Match format_option_timestamp(): wp_timezone() + DateTime (no date_i18n,
+        // which keeps this callable under the unit-test harness too).
+        $tz    = wp_timezone();
+        $start = (new \DateTime('@' . $since_ts))->setTimezone($tz);
+        $end   = (new \DateTime('@' . time()))->setTimezone($tz);
+
+        return $start->format('M j, Y') . ' – ' . $end->format('M j, Y');
     }
 
     /**

@@ -56,6 +56,9 @@ export function App() {
   const [isConnected,         setIsConnected]         = useState(initialConnected);
   const [backfillStatus,      setBackfillStatus]      = useState(initialBackfillStatus);
   const [backfillCompletedAt, setBackfillCompletedAt] = useState(initialBackfillCompletedAt);
+  const [backfillProcessed,   setBackfillProcessed]   = useState(0);
+  const [backfillTotal,       setBackfillTotal]       = useState(0);
+  const [backfillWindow,      setBackfillWindow]      = useState('');
   const [lastSyncAt,          setLastSyncAt]          = useState(initialLastSyncAt);
   const [saving,              setSaving]              = useState(false);
   const [saveMsg,             setSaveMsg]             = useState<string | null>(null);
@@ -72,6 +75,19 @@ export function App() {
       handleDisconnected();
     }
   }, [status?.is_connected]);
+
+  // Keep the historical-import indicator in sync with the live status payload
+  // (30s poll + manual refresh). Without this the pill would be frozen at its
+  // initial server-rendered value and never reflect progress or completion.
+  useEffect(() => {
+    const bf = status?.backfill;
+    if (!bf) return;
+    setBackfillStatus(bf.status);
+    setBackfillCompletedAt(bf.completed_at);
+    setBackfillProcessed(bf.processed);
+    setBackfillTotal(bf.total);
+    setBackfillWindow(bf.window_label);
+  }, [status?.backfill]);
 
   function handleDisconnected() {
     setIsConnected(false);
@@ -250,6 +266,11 @@ export function App() {
               onRangeChange={r => setBackfillRange(clampRange(r))}
               backfillStatus={isConnected ? backfillStatus : 'idle'}
               backfillCompletedAt={backfillCompletedAt}
+              backfillProcessed={backfillProcessed}
+              backfillTotal={backfillTotal}
+              backfillWindow={backfillWindow}
+              onRefreshStatus={refresh}
+              refreshingStatus={loading}
               lastSyncAt={lastSyncAt}
               syncHour={syncHour}
               onHourChange={setSyncHour}

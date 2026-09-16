@@ -14,6 +14,13 @@ export interface StatusResponse {
   plan?:           string;
   retention_days?: number | null;
   max_backfill_months?: number | null;
+  backfill?: {
+    status:       'idle' | 'running' | 'complete';
+    processed:    number;
+    total:        number;
+    completed_at: string;
+    window_label: string;
+  };
   plugin_version:  string;
 }
 
