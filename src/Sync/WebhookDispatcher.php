@@ -175,6 +175,57 @@ final class WebhookDispatcher {
         return null;
     }
 
+    /**
+     * Report a permanently-failed batch to the SaaS API so the gap is recorded
+     * in dead_letter_events (Phase 5) instead of being silently lost when the
+     * run pauses. Best-effort and single-shot: if the API is the reason the
+     * batch failed, this will also fail — that's fine, the plugin still surfaces
+     * wc_mcp_sync_error locally. No retries here (we're already giving up).
+     *
+     * @param int    $from_id First order id in the failed page.
+     * @param int    $to_id   Last order id in the failed page.
+     * @param string $reason  Short machine reason (e.g. 'backfill_batch_failed').
+     * @return bool           True if the API accepted the dead-letter report.
+     */
+    public function dispatch_dead_letter(int $from_id, int $to_id, string $reason): bool {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
+            return false;
+        }
+
+        $tenant_id  = get_option('wc_mcp_tenant_id');
+        $auth_token = get_option('wc_mcp_auth_token');
+        if (!$tenant_id || !$auth_token) {
+            return false;
+        }
+
+        $body = wp_json_encode([
+            'orders'         => [],
+            'event'          => 'backfill_dead_letter',
+            'failed_from_id' => $from_id,
+            'failed_to_id'   => $to_id,
+            'error_reason'   => $reason,
+        ]);
+
+        $headers = array_merge(
+            self::build_headers($auth_token, $tenant_id),
+            ['X-Idempotency-Key' => wp_generate_uuid4()]
+        );
+
+        $response = wp_remote_post(self::ingest_url() . '/batch', [
+            'timeout' => self::REQUEST_TIMEOUT,
+            'headers' => $headers,
+            'body'    => $body,
+        ]);
+
+        if (is_wp_error($response)) {
+            self::log('Dead-letter report failed (network): ' . $response->get_error_message(), 'warning');
+            return false;
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        return $status_code >= 200 && $status_code < 300;
+    }
+
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------

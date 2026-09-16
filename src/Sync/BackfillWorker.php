@@ -186,6 +186,19 @@ final class BackfillWorker {
                 // re-import). The cursor stays put so a later retry resumes here.
                 update_option('wc_mcp_sync_error', 'backfill_batch_failed');
                 delete_option('wc_mcp_backfill_batch_attempts');
+
+                // Phase 5: report the failed keyset range to the SaaS API so it
+                // lands in dead_letter_events (visible + replayable) rather than
+                // being silently stranded behind a paused run. Best-effort.
+                $failed_from = (int) $orders[0]['id'];
+                $failed_to   = (int) end($orders)['id'];
+                reset($orders);
+                (new WebhookDispatcher())->dispatch_dead_letter(
+                    $failed_from,
+                    $failed_to,
+                    'backfill_batch_failed'
+                );
+
                 self::log(
                     sprintf('Backfill batch after id %d failed %d times — pausing run.', $last_id, $attempts),
                     'error'
