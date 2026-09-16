@@ -583,11 +583,15 @@ final class SettingsPage {
         delete_option('wc_mcp_backfill_processed');
         delete_option('wc_mcp_backfill_run_id');
         delete_option('wc_mcp_backfill_batch_attempts');
+        delete_option('wc_mcp_reconcile_done');
+        delete_option('wc_mcp_reconcile_since');
+        delete_option('wc_mcp_reconcile_last_id');
         delete_option('wc_mcp_last_sync_timestamp');
         delete_option('wc_mcp_sync_error');
 
         if (function_exists('as_unschedule_all_actions')) {
             as_unschedule_all_actions('wc_mcp_backfill_batch', [], 'wc-mcp');
+            as_unschedule_all_actions('wc_mcp_backfill_reconcile', [], 'wc-mcp');
             as_unschedule_all_actions('wc_mcp_delta_sync',     [], 'wc-mcp');
         }
     }
@@ -664,6 +668,9 @@ final class SettingsPage {
         delete_option('wc_mcp_backfill_processed');
         delete_option('wc_mcp_backfill_batch_attempts');
         delete_option('wc_mcp_backfill_total');
+        delete_option('wc_mcp_reconcile_done');
+        delete_option('wc_mcp_reconcile_since');
+        delete_option('wc_mcp_reconcile_last_id');
 
         // Drop any pending batches so the fresh run below isn't racing a stale one.
         if (function_exists('as_unschedule_all_actions')) {

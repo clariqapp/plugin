@@ -190,6 +190,56 @@ final class WebhookDispatcher {
     }
 
     /**
+     * Ask the SaaS API which of a page of WooCommerce order ids it has NOT
+     * persisted (Phase 5 auto re-enqueue). Only the plugin can enumerate WC-side
+     * ids, so this diff is what lets the reconciliation sweep recompute the
+     * *exact* missing orders and re-send them, rather than only recording a
+     * count shortfall.
+     *
+     * @param array<int, int> $candidate_ids Order ids the plugin believes are in-window.
+     * @return array<int, int>|null  Missing ids (subset of candidates), or null on failure.
+     */
+    public function reconcile_batch(array $candidate_ids): ?array {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
+            return null;
+        }
+
+        $tenant_id  = get_option('wc_mcp_tenant_id');
+        $auth_token = get_option('wc_mcp_auth_token');
+        if (!$tenant_id || !$auth_token) {
+            return null;
+        }
+        if (empty($candidate_ids)) {
+            return [];
+        }
+
+        $body = wp_json_encode(['candidate_ids' => array_values(array_map('intval', $candidate_ids))]);
+
+        $response = wp_remote_post(self::ingest_url() . '/reconcile', [
+            'timeout' => self::BATCH_REQUEST_TIMEOUT,
+            'headers' => self::build_headers($auth_token, $tenant_id),
+            'body'    => $body,
+        ]);
+
+        if (is_wp_error($response)) {
+            self::log('Reconcile request failed (network): ' . $response->get_error_message(), 'warning');
+            return null;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            self::log(sprintf('Reconcile request returned HTTP %d.', $code), 'warning');
+            return null;
+        }
+
+        $decoded = json_decode(wp_remote_retrieve_body($response), true);
+        if (is_array($decoded) && isset($decoded['missing_ids']) && is_array($decoded['missing_ids'])) {
+            return array_map('intval', $decoded['missing_ids']);
+        }
+        return [];
+    }
+
+    /**
      * Report a permanently-failed batch to the SaaS API so the gap is recorded
      * in dead_letter_events (Phase 5) instead of being silently lost when the
      * run pauses. Best-effort and single-shot: if the API is the reason the

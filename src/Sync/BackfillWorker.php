@@ -19,13 +19,16 @@ final class BackfillWorker {
 
     private const BATCH_SIZE       = 25;
     private const MAX_BATCH_ATTEMPTS = 5; // Retries for a single failing batch before pausing the run.
+    private const RECONCILE_CHUNK  = 200; // WC ids per reconciliation probe (Phase 5).
     private const ACTION_HOOK      = 'wc_mcp_backfill_batch';
+    private const RECONCILE_HOOK   = 'wc_mcp_backfill_reconcile';
     private const FORCE_SYNC_HOOK  = 'wc_mcp_force_sync';
     private const GROUP            = 'wc-mcp';
     private const MEMORY_HEADROOM  = 0.80; // Stop if memory usage exceeds 80%.
 
     public static function register_hooks(): void {
         add_action(self::ACTION_HOOK,     [self::class, 'process_batch']);
+        add_action(self::RECONCILE_HOOK,  [self::class, 'run_reconcile']);
         add_action(self::FORCE_SYNC_HOOK, [self::class, 'trigger_force_sync']);
     }
 
@@ -50,6 +53,9 @@ final class BackfillWorker {
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_complete');
         delete_option('wc_mcp_backfill_processed');
+        delete_option('wc_mcp_reconcile_done');
+        delete_option('wc_mcp_reconcile_since');
+        delete_option('wc_mcp_reconcile_last_id');
         // New run token — scopes batch idempotency keys so retries within this
         // run dedupe, but a later re-import (new token) is never masked by a
         // stale cached response for identical order content (Phase 6).
@@ -149,9 +155,29 @@ final class BackfillWorker {
         $processed_before = (int) get_option('wc_mcp_backfill_processed', 0);
 
         if (empty($orders)) {
-            // Backfill complete. Send a completion event to SaaS API, passing the
-            // final processed count as the progress cursor so the server snaps its
-            // backfill_cursor to 100%.
+            // Forward paging is exhausted. Before declaring the run complete, run
+            // a reconciliation sweep (Phase 5) that closes any exact gaps — orders
+            // in the window the warehouse never received (e.g. a chunk that failed
+            // and was dead-lettered). Only once that sweep has finished do we
+            // finalize + re-verify, so "complete" reflects the repaired state.
+            if (!get_option('wc_mcp_reconcile_done')) {
+                // Start the sweep exactly once per run: seed it only if it isn't
+                // already in flight (guards against a stray duplicate action
+                // restarting reconcile from scratch).
+                if (get_option('wc_mcp_reconcile_since') === false) {
+                    update_option('wc_mcp_reconcile_since', $since);
+                    update_option('wc_mcp_reconcile_last_id', 0);
+                    if (function_exists('as_enqueue_async_action')) {
+                        as_enqueue_async_action(self::RECONCILE_HOOK, [], self::GROUP);
+                    }
+                    self::log('Forward backfill pass done — starting reconciliation sweep.', 'info');
+                }
+                return;
+            }
+
+            // Reconciliation sweep finished — finalize. Send the completion event
+            // (the server re-verifies imported vs target and settles the terminal
+            // status to complete/failed), then clear all run state.
             $dispatcher = new WebhookDispatcher();
             $dispatcher->dispatch_batch([], $processed_before, 'backfill_complete');
 
@@ -163,6 +189,9 @@ final class BackfillWorker {
             delete_option('wc_mcp_backfill_last_id');
             delete_option('wc_mcp_backfill_since'); // Locked window is consumed; next run recomputes.
             delete_option('wc_mcp_backfill_batch_attempts');
+            delete_option('wc_mcp_reconcile_done');
+            delete_option('wc_mcp_reconcile_since');
+            delete_option('wc_mcp_reconcile_last_id');
             update_option('wc_mcp_last_sync_timestamp', time());
             update_option('wc_mcp_backfill_complete', time()); // Timestamp for UI display.
             self::log('Historical backfill complete.', 'info');
@@ -278,6 +307,9 @@ final class BackfillWorker {
         update_option('wc_mcp_backfill_last_id', 0);
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_processed');
+        delete_option('wc_mcp_reconcile_done');
+        delete_option('wc_mcp_reconcile_since');
+        delete_option('wc_mcp_reconcile_last_id');
         update_option('wc_mcp_backfill_run_id', wp_generate_uuid4());
         as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
         self::log('Force sync triggered.', 'info');
@@ -309,6 +341,9 @@ final class BackfillWorker {
         delete_option('wc_mcp_backfill_processed');
         delete_option('wc_mcp_backfill_batch_attempts');
         delete_option('wc_mcp_sync_error');
+        delete_option('wc_mcp_reconcile_done');
+        delete_option('wc_mcp_reconcile_since');
+        delete_option('wc_mcp_reconcile_last_id');
         update_option('wc_mcp_backfill_run_id', wp_generate_uuid4());
 
         if (function_exists('as_enqueue_async_action')) {
@@ -316,6 +351,92 @@ final class BackfillWorker {
         }
 
         self::log('Historical re-import started.', 'info');
+    }
+
+    /**
+     * Action Scheduler callback: one page of the post-backfill reconciliation
+     * sweep (Phase 5). Pages the store's own WooCommerce order ids across the
+     * locked window, asks the SaaS API which are missing from the warehouse, and
+     * re-dispatches exactly those. When the paging is exhausted it hands control
+     * back to process_batch() to finalize + re-verify.
+     *
+     * This is what turns a recorded shortfall from "detected, merchant must
+     * re-import" into self-healing: the exact missing orders are recomputed
+     * (server diff of plugin-supplied ids) and re-sent automatically. Bounded —
+     * each id is visited once; a chunk whose re-dispatch fails is left for the
+     * final completeness check to dead-letter, so there is no retry loop.
+     */
+    public static function run_reconcile(): void {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
+            return;
+        }
+
+        $since = get_option('wc_mcp_reconcile_since', false);
+        if ($since === false) {
+            return; // No sweep in progress.
+        }
+
+        if (!self::memory_ok()) {
+            self::log('Memory headroom exhausted — requeueing reconcile for later.', 'warning');
+            as_schedule_single_action(time() + 300, self::RECONCILE_HOOK, [], self::GROUP);
+            return;
+        }
+
+        $last_id = (int) get_option('wc_mcp_reconcile_last_id', 0);
+        $ids     = self::fetch_ids($last_id, (string) $since, self::RECONCILE_CHUNK);
+
+        if (empty($ids)) {
+            // Sweep finished — mark done and let process_batch() finalize the run
+            // (its forward cursor still points past the last order, so it will hit
+            // the empty page again and, seeing reconcile_done, finalize+verify).
+            update_option('wc_mcp_reconcile_done', 1);
+            if (function_exists('as_enqueue_async_action')) {
+                as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
+            }
+            self::log('Reconciliation sweep complete.', 'info');
+            return;
+        }
+
+        $dispatcher = new WebhookDispatcher();
+        $missing    = $dispatcher->reconcile_batch($ids);
+
+        if (is_array($missing) && !empty($missing)) {
+            $orders = self::fetch_orders_by_ids($missing);
+            if (!empty($orders)) {
+                self::attach_line_items($orders);
+                self::attach_order_meta($orders);
+                self::attach_coupons($orders);
+
+                $processed = (int) get_option('wc_mcp_backfill_processed', 0);
+                // Re-send as a normal (non-zero cursor) backfill batch so the
+                // server upserts them without resetting run tracking.
+                $result = $dispatcher->dispatch_batch($orders, $processed, 'backfill_batch');
+
+                if (is_array($result) && !empty($result['rate_limited'])) {
+                    // Server backpressure — retry the SAME reconcile cursor after
+                    // Retry-After (do not advance past these unrepaired ids).
+                    $delay = max(1, (int) ($result['retry_after'] ?? 5));
+                    as_schedule_single_action(time() + $delay, self::RECONCILE_HOOK, [], self::GROUP);
+                    return;
+                }
+
+                if (is_array($result)) {
+                    update_option('wc_mcp_backfill_processed', $processed + count($orders));
+                    self::log(sprintf('Reconcile re-sent %d missing order(s).', count($orders)), 'info');
+                } else {
+                    // Re-dispatch failed (e.g. API down). Leave the gap for the
+                    // final completeness verify to dead-letter; don't loop here.
+                    self::log('Reconcile re-dispatch failed for a chunk — leaving gap for final verify.', 'warning');
+                }
+            }
+        }
+
+        // Advance the reconcile keyset cursor and continue with the next chunk.
+        update_option('wc_mcp_reconcile_last_id', (int) end($ids));
+        reset($ids);
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::RECONCILE_HOOK, [], self::GROUP);
+        }
     }
 
     /**
@@ -379,6 +500,96 @@ final class BackfillWorker {
                 $last_id,
                 self::BATCH_SIZE
             ),
+            ARRAY_A
+        );
+        // phpcs:enable
+
+        return $rows ?: [];
+    }
+
+    /**
+     * Fetch just the order ids in the window past $last_id (Phase 5 reconcile
+     * probe). Mirrors fetch_orders()'s WHERE clause exactly so the id set the
+     * server is asked about is the same population the backfill targets.
+     *
+     * @return array<int, int> Order ids, ascending.
+     */
+    private static function fetch_ids(int $last_id, string $since, int $limit): array {
+        global $wpdb;
+
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared
+        $rows = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT o.id
+                FROM {$wpdb->prefix}wc_orders o
+                WHERE o.type = 'shop_order'
+                  AND o.status IN ('wc-completed','wc-processing','wc-shipped','wc-refunded','wc-cancelled')
+                  AND o.date_created_gmt >= %s
+                  AND o.id > %d
+                ORDER BY o.id ASC
+                LIMIT %d",
+                $since,
+                $last_id,
+                $limit
+            )
+        );
+        // phpcs:enable
+
+        return array_map('intval', $rows ?: []);
+    }
+
+    /**
+     * Fetch full order rows for a specific set of ids (Phase 5 reconcile
+     * re-dispatch). Same projection as fetch_orders() so the attach_* helpers
+     * and the ingest payload shape are identical.
+     *
+     * @param array<int, int> $ids
+     * @return array<int, array<string, mixed>>
+     */
+    private static function fetch_orders_by_ids(array $ids): array {
+        if (empty($ids)) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $ids     = array_map('intval', $ids);
+        $id_csv  = implode(',', $ids);
+
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared
+        $rows = $wpdb->get_results(
+            "SELECT
+                o.id,
+                o.status,
+                o.date_created_gmt,
+                o.date_updated_gmt,
+                o.total_amount,
+                o.customer_id,
+                o.payment_method,
+                o.payment_method_title,
+                o.transaction_id,
+                os.total_sales,
+                os.shipping_total,
+                os.tax_total,
+                os.net_total,
+                os.returning_customer,
+                os.num_items_sold,
+                COALESCE(sa.city, ba.city)       AS shipping_city,
+                COALESCE(sa.country, ba.country) AS shipping_country,
+                CASE
+                    WHEN ba.email IS NOT NULL AND ba.email != ''
+                    THEN SHA2(LOWER(TRIM(ba.email)), 256)
+                    ELSE NULL
+                END                              AS billing_email_hash
+            FROM {$wpdb->prefix}wc_orders o
+            LEFT JOIN {$wpdb->prefix}wc_order_stats os ON o.id = os.order_id
+            LEFT JOIN {$wpdb->prefix}wc_order_addresses ba
+                ON o.id = ba.order_id AND ba.address_type = 'billing'
+            LEFT JOIN {$wpdb->prefix}wc_order_addresses sa
+                ON o.id = sa.order_id AND sa.address_type = 'shipping'
+            WHERE o.type = 'shop_order'
+              AND o.id IN ($id_csv)
+            ORDER BY o.id ASC",
             ARRAY_A
         );
         // phpcs:enable
