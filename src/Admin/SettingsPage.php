@@ -664,12 +664,16 @@ final class SettingsPage {
         delete_option('wc_mcp_backfill_batch_attempts');
         delete_option('wc_mcp_backfill_total');
 
-        // Drop any pending batches so maybe_schedule_backfill() enqueues fresh.
+        // Drop any pending batches so the fresh run below isn't racing a stale one.
         if (function_exists('as_unschedule_all_actions')) {
             as_unschedule_all_actions('wc_mcp_backfill_batch', [], 'wc-mcp');
         }
 
-        \Clariq\McpPlugin\Sync\BackfillWorker::maybe_schedule_backfill();
+        // Deterministically start the run. NOT maybe_schedule_backfill(): its
+        // "already queued?" guard can see a just-canceled/in-flight action and
+        // bail, which would leave the store at idle/0 after we've already wiped
+        // the previous completion state (the re-import-does-nothing bug).
+        \Clariq\McpPlugin\Sync\BackfillWorker::start_backfill_now();
 
         return new \WP_REST_Response(['success' => true, 'message' => 'Historical re-import queued.']);
     }
@@ -687,17 +691,29 @@ final class SettingsPage {
         // A backfill_offset in wp_options means a batch run is in progress (cursor is live).
         $offset_exists = get_option('wc_mcp_backfill_offset') !== false;
 
-        // Action Scheduler has a pending batch job.
-        $action_pending = function_exists('as_has_scheduled_action')
-            && as_has_scheduled_action('wc_mcp_backfill_batch', [], 'wc-mcp');
-
-        if ($offset_exists || $action_pending) {
+        // A live cursor is the only unambiguous signal of an in-flight run.
+        if ($offset_exists) {
             return 'running';
         }
 
-        // wc_mcp_backfill_complete is set once process_batch() exhausts all rows.
+        // Completion is AUTHORITATIVE once the cursor is gone. process_batch()
+        // deletes wc_mcp_backfill_offset and sets wc_mcp_backfill_complete when a
+        // run finishes. A stray/duplicate wc_mcp_backfill_batch action can linger
+        // in the Action Scheduler queue after that (it no-ops via process_batch()'s
+        // completion guard when it fires) — but if we let a merely-queued action
+        // report "running" here, the admin UI shows a perpetual "importing" screen
+        // for an import that already finished (offset gone, completed_at set, all
+        // orders in the warehouse). So check completion BEFORE the pending action.
         if (get_option('wc_mcp_backfill_complete')) {
             return 'complete';
+        }
+
+        // No live cursor and not marked complete: a queued batch means a fresh run
+        // is about to start (e.g. just scheduled, first batch not yet executed).
+        $action_pending = function_exists('as_has_scheduled_action')
+            && as_has_scheduled_action('wc_mcp_backfill_batch', [], 'wc-mcp');
+        if ($action_pending) {
+            return 'running';
         }
 
         return 'idle';

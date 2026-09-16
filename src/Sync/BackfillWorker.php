@@ -228,6 +228,40 @@ final class BackfillWorker {
     }
 
     /**
+     * Deterministically START a fresh backfill run right now.
+     *
+     * Unlike maybe_schedule_backfill() — which BAILS if Action Scheduler still
+     * reports a queued/in-progress batch (correct for the idempotent activation
+     * hook, wrong for an explicit re-import) — this ALWAYS leaves the store in a
+     * live "running" state: a zeroed cursor plus a freshly enqueued batch. It is
+     * called by handle_backfill_restart() after that endpoint has cleared prior
+     * progress and unscheduled old jobs.
+     *
+     * The previous flow delegated to maybe_schedule_backfill() here; when its
+     * as_has_scheduled_action() guard saw a lingering (just-canceled or
+     * mid-flight) action it returned WITHOUT setting the offset or enqueuing,
+     * so the re-import wiped the old "complete" state and then started nothing —
+     * stranding the admin UI at "Not started · 0" while the warehouse still held
+     * the fully-imported data. Setting the offset unconditionally also means
+     * get_backfill_status() reports "running" immediately, so the merchant sees
+     * "Importing…" rather than a dead idle screen even before the first batch runs.
+     */
+    public static function start_backfill_now(): void {
+        update_option('wc_mcp_backfill_offset', 0);
+        delete_option('wc_mcp_backfill_since');
+        delete_option('wc_mcp_backfill_complete');
+        delete_option('wc_mcp_backfill_processed');
+        delete_option('wc_mcp_backfill_batch_attempts');
+        delete_option('wc_mcp_sync_error');
+
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
+        }
+
+        self::log('Historical re-import started.', 'info');
+    }
+
+    /**
      * Fetch a page of orders from HPOS tables using $wpdb directly.
      * Avoids loading full WC_Order objects to keep memory footprint minimal.
      *

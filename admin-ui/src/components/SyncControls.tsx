@@ -91,10 +91,10 @@ export function SyncControls({
     setReimportMsg(null);
     try {
       await onReimport();
-      setReimportMsg('Re-import started — bringing in your history for the selected range.');
+      setReimportMsg('Import started — bringing in your history for the selected range.');
       setReimportOk(true);
     } catch {
-      setReimportMsg('We couldn’t start the re-import. Please try again.');
+      setReimportMsg('We couldn’t start the import. Please try again.');
       setReimportOk(false);
     } finally {
       setReimporting(false);
@@ -267,6 +267,31 @@ export function SyncControls({
                   On local/dev sites, run <code>wp action-scheduler run</code> to process the queue.
                 </span>
               </div>
+            </div>
+          )}
+
+          {isConnected && backfillStatus === 'idle' && onReimport && (
+            <div className="clq-reimport">
+              <div className="clq-reimport__row">
+                <button
+                  type="button"
+                  className="clq-btn clq-btn--primary"
+                  disabled={disabled || reimporting}
+                  onClick={handleReimport}
+                >
+                  {reimporting ? <span className="clq-spinner" aria-hidden="true" /> : <SyncIcon />}
+                  {reimporting ? 'Starting…' : 'Start import'}
+                </button>
+                <span className="clq-field__hint">
+                  Brings in your past orders for the range above. Runs once in the background.
+                </span>
+              </div>
+              {reimportMsg && (
+                <div className={`clq-notice ${reimportOk ? 'clq-notice--success' : 'clq-notice--error'}`} style={{ marginTop: 12 }}>
+                  {reimportOk ? <CheckIcon /> : <AlertIcon />}
+                  <div>{reimportMsg}</div>
+                </div>
+              )}
             </div>
           )}
 
