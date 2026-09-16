@@ -162,7 +162,7 @@ final class BackfillWorker {
         self::attach_coupons($orders);
 
         $dispatcher = new WebhookDispatcher();
-        $result     = $dispatcher->dispatch_batch($orders, $processed_before, 'backfill_batch', $backfill_total);
+        $result     = $dispatcher->dispatch_batch($orders, $processed_before, 'backfill_batch', $backfill_total, $since);
 
         // Dispatch outcome handling.
         //

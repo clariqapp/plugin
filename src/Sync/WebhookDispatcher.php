@@ -73,9 +73,13 @@ final class WebhookDispatcher {
      * @param array<int, array<string, mixed>> $orders
      * @param int                              $cursor Progress count (orders sent so far) sent to the API.
      * @param string                           $event  The event type name.
+     * @param int|null                         $backfill_total Window order count (progress denominator).
+     * @param string|null                      $window_start Locked window floor (Y-m-d H:i:s) — the run's
+     *                                          immutable date lower bound, sent so the server can derive
+     *                                          progress as COUNT(orders in window) / target.
      * @return array<string, mixed>|null  Decoded API response body, or null on total failure.
      */
-    public function dispatch_batch(array $orders, int $cursor = 0, string $event = 'backfill_batch', ?int $backfill_total = null): ?array {
+    public function dispatch_batch(array $orders, int $cursor = 0, string $event = 'backfill_batch', ?int $backfill_total = null, ?string $window_start = null): ?array {
         if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
             return null;
         }
@@ -96,6 +100,9 @@ final class WebhookDispatcher {
         ];
         if ($backfill_total !== null) {
             $payload['backfill_total'] = $backfill_total;
+        }
+        if ($window_start !== null) {
+            $payload['window_start'] = $window_start;
         }
 
         $body = wp_json_encode($payload);
