@@ -111,6 +111,14 @@ final class BackfillWorker {
         // $since floor used for the rest of this run.
         $backfill_total = null;
         if ($last_id === 0 || $since === false) {
+            // Phase 4 lifecycle: announce that a run has started and we're sizing
+            // the window, BEFORE the (potentially slow) count + first data batch.
+            // The server flips the store to `counting` so the dashboard shows
+            // "Scanning your store…" during this gap instead of a stale idle
+            // state. Best-effort and idempotent (deduped by the run token), so a
+            // retried first batch never double-counts.
+            (new WebhookDispatcher())->dispatch_batch([], 0, 'backfill_counting');
+
             $range = (int) get_option('wc_mcp_backfill_range', 12);
             $since = date('Y-m-d H:i:s', strtotime("-{$range} months"));
 
