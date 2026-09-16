@@ -581,6 +581,7 @@ final class SettingsPage {
         delete_option('wc_mcp_backfill_last_id');
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_processed');
+        delete_option('wc_mcp_backfill_run_id');
         delete_option('wc_mcp_backfill_batch_attempts');
         delete_option('wc_mcp_last_sync_timestamp');
         delete_option('wc_mcp_sync_error');

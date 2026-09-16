@@ -91,8 +91,6 @@ final class WebhookDispatcher {
             return null;
         }
 
-        $idempotency_key = wp_generate_uuid4();
-
         $payload = [
             'orders' => $orders,
             'event'  => $event,
@@ -106,6 +104,18 @@ final class WebhookDispatcher {
         }
 
         $body = wp_json_encode($payload);
+
+        // Content-hash idempotency (Phase 6): derive the key from the run token +
+        // batch content instead of a fresh UUID per attempt. Retrying the same
+        // batch (e.g. after a lost response) yields the SAME key, so the server
+        // returns its cached result and re-does no work. Scoping by the per-run
+        // token (wc_mcp_backfill_run_id) ensures a later re-import of identical
+        // orders is NOT masked by a stale cached response — a new run = new keys.
+        // Falls back to a random UUID if no run token is set (e.g. delta sync).
+        $run_id = (string) get_option('wc_mcp_backfill_run_id', '');
+        $idempotency_key = $run_id !== ''
+            ? hash('sha256', $run_id . '|' . $body)
+            : wp_generate_uuid4();
 
         $headers = array_merge(
             self::build_headers($auth_token, $tenant_id),
@@ -141,12 +151,16 @@ final class WebhookDispatcher {
             }
 
             if ($status_code === 429) {
-                // Rate limited — respect Retry-After header.
+                // Server backpressure (pool saturated). Don't burn in-process
+                // retries sleeping — return a rate-limited marker so the caller
+                // (BackfillWorker) reschedules via Action Scheduler after the
+                // server's Retry-After, freeing this PHP worker immediately. This
+                // is NOT a failure and must not count toward the batch's failure
+                // budget.
                 $retry_after = (int) wp_remote_retrieve_header($response, 'retry-after');
                 $sleep       = max(1, $retry_after ?: (int) (self::BASE_BACKOFF ** $attempt));
-                self::log(sprintf('Rate limited (429). Waiting %d s.', $sleep), 'warning');
-                sleep($sleep);
-                continue;
+                self::log(sprintf('Rate limited (429) — backing off %d s (server backpressure).', $sleep), 'warning');
+                return ['rate_limited' => true, 'retry_after' => $sleep];
             }
 
             if ($status_code >= 500) {

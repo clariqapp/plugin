@@ -50,6 +50,10 @@ final class BackfillWorker {
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_complete');
         delete_option('wc_mcp_backfill_processed');
+        // New run token — scopes batch idempotency keys so retries within this
+        // run dedupe, but a later re-import (new token) is never masked by a
+        // stale cached response for identical order content (Phase 6).
+        update_option('wc_mcp_backfill_run_id', wp_generate_uuid4());
 
         as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
     }
@@ -164,6 +168,21 @@ final class BackfillWorker {
         $dispatcher = new WebhookDispatcher();
         $result     = $dispatcher->dispatch_batch($orders, $processed_before, 'backfill_batch', $backfill_total, $since);
 
+        // Server backpressure (Phase 6): the API shed this batch with 429 because
+        // its DB pool is saturated. This is NOT a failure — do not advance, do not
+        // touch the failure/attempt counter. Reschedule the SAME cursor after the
+        // server's Retry-After so the backfill paces itself to what the DB can
+        // absorb instead of piling up requests.
+        if (is_array($result) && !empty($result['rate_limited'])) {
+            $delay = max(1, (int) ($result['retry_after'] ?? 5));
+            self::log(
+                sprintf('Backfill throttled by server — retrying after id %d in %d s.', $last_id, $delay),
+                'info'
+            );
+            as_schedule_single_action(time() + $delay, self::ACTION_HOOK, [], self::GROUP);
+            return;
+        }
+
         // Dispatch outcome handling.
         //
         // CRITICAL: only advance the cursor when the batch was actually accepted
@@ -251,6 +270,7 @@ final class BackfillWorker {
         update_option('wc_mcp_backfill_last_id', 0);
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_processed');
+        update_option('wc_mcp_backfill_run_id', wp_generate_uuid4());
         as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
         self::log('Force sync triggered.', 'info');
     }
@@ -281,6 +301,7 @@ final class BackfillWorker {
         delete_option('wc_mcp_backfill_processed');
         delete_option('wc_mcp_backfill_batch_attempts');
         delete_option('wc_mcp_sync_error');
+        update_option('wc_mcp_backfill_run_id', wp_generate_uuid4());
 
         if (function_exists('as_enqueue_async_action')) {
             as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
