@@ -21,6 +21,8 @@ interface Props {
   plan?:               string;
   retentionDays?:      number | null;
   maxBackfillMonths?:  number | null;
+  upgradeUrl?:         string;
+  onReimport?:         () => Promise<void>;
 }
 
 const RANGE_OPTIONS = [
@@ -56,10 +58,49 @@ export function SyncControls({
   plan,
   retentionDays,
   maxBackfillMonths,
+  upgradeUrl,
+  onReimport,
 }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [syncOk,  setSyncOk]  = useState(false);
+  const [reimporting, setReimporting] = useState(false);
+  const [reimportMsg, setReimportMsg] = useState<string | null>(null);
+  const [reimportOk,  setReimportOk]  = useState(false);
+  // Local spin state so the refresh icon animates on manual clicks. `refreshingStatus`
+  // (the shared status-loading flag) only flips on the very first load, so on its own
+  // it never spins on click; we drive a brief guaranteed-visible spin here.
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    if (manualRefreshing) return;
+    setManualRefreshing(true);
+    try {
+      await Promise.resolve(onRefreshStatus());
+    } finally {
+      // Keep the spin visible long enough to read as feedback even on fast responses.
+      setTimeout(() => setManualRefreshing(false), 600);
+    }
+  }
+
+  const isRefreshing = manualRefreshing || refreshingStatus;
+
+  async function handleReimport() {
+    if (!onReimport || reimporting) return;
+    setReimporting(true);
+    setReimportMsg(null);
+    try {
+      await onReimport();
+      setReimportMsg('Re-import started — bringing in your history for the selected range.');
+      setReimportOk(true);
+    } catch {
+      setReimportMsg('We couldn’t start the re-import. Please try again.');
+      setReimportOk(false);
+    } finally {
+      setReimporting(false);
+      setTimeout(() => setReimportMsg(null), 6000);
+    }
+  }
 
   const isCapped = maxBackfillMonths != null;
   let rangeOptions = RANGE_OPTIONS;
@@ -143,7 +184,7 @@ export function SyncControls({
                 id="clq-backfill-range"
                 className="clq-select"
                 value={backfillRange}
-                disabled={disabled || backfillStatus === 'running' || backfillStatus === 'complete'}
+                disabled={disabled || backfillStatus === 'running'}
                 onChange={e => onRangeChange(Number(e.target.value))}
               >
                 {rangeOptions.map(opt => (
@@ -156,12 +197,12 @@ export function SyncControls({
               <button
                 type="button"
                 className="clq-iconbtn"
-                onClick={onRefreshStatus}
-                disabled={refreshingStatus}
+                onClick={handleRefresh}
+                disabled={isRefreshing}
                 aria-label="Refresh import status"
                 title="Refresh import status"
               >
-                <SyncIcon className={refreshingStatus ? 'clq-spin' : undefined} />
+                <SyncIcon className={isRefreshing ? 'clq-spin' : undefined} />
               </button>
             </div>
           </div>
@@ -205,8 +246,14 @@ export function SyncControls({
             <div className="clq-notice clq-notice--info" style={{ marginTop: 14 }}>
               <SparkIcon />
               <div>
-                Your {plan ?? 'free'} plan imports the last {retentionDays ?? 30} days of orders.
-                Upgrade to import and analyze your full order history.
+                Your {plan ?? 'free'} plan imports the last {retentionDays ?? 30} days of orders.{' '}
+                {upgradeUrl ? (
+                  <a className="clq-link" href={upgradeUrl} target="_blank" rel="noopener noreferrer">
+                    Upgrade to import and analyze your full order history
+                  </a>
+                ) : (
+                  'Upgrade to import and analyze your full order history.'
+                )}
               </div>
             </div>
           )}
@@ -220,6 +267,33 @@ export function SyncControls({
                   On local/dev sites, run <code>wp action-scheduler run</code> to process the queue.
                 </span>
               </div>
+            </div>
+          )}
+
+          {isConnected && backfillStatus === 'complete' && onReimport && (
+            <div className="clq-reimport">
+              <div className="clq-reimport__row">
+                <button
+                  type="button"
+                  className="clq-btn clq-btn--secondary"
+                  disabled={disabled || reimporting}
+                  onClick={handleReimport}
+                >
+                  {reimporting ? <span className="clq-spinner" aria-hidden="true" /> : <SyncIcon />}
+                  {reimporting ? 'Starting…' : 'Re-import history'}
+                </button>
+                <span className="clq-field__hint">
+                  {isCapped
+                    ? 'Runs the import again for the range above.'
+                    : 'Pick a wider range above, then re-import to bring in more history.'}
+                </span>
+              </div>
+              {reimportMsg && (
+                <div className={`clq-notice ${reimportOk ? 'clq-notice--success' : 'clq-notice--error'}`} style={{ marginTop: 12 }}>
+                  {reimportOk ? <CheckIcon /> : <AlertIcon />}
+                  <div>{reimportMsg}</div>
+                </div>
+              )}
             </div>
           )}
         </div>

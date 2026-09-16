@@ -152,6 +152,17 @@ final class SettingsPage {
             },
         ]);
 
+        // Re-run the historical import (e.g. after a plan upgrade widens the
+        // allowed window). Resets the backfill cursor and reschedules a full
+        // import for the currently saved range.
+        register_rest_route('wc-mcp/v1', '/backfill/restart', [
+            'methods'             => \WP_REST_Server::CREATABLE,
+            'callback'            => [$this, 'handle_backfill_restart'],
+            'permission_callback' => function () {
+                return current_user_can('manage_woocommerce');
+            },
+        ]);
+
         // Rotate the local bridge secret (invalidates any configured MCP clients).
         register_rest_route('wc-mcp/v1', '/bridge/rotate-secret', [
             'methods'             => \WP_REST_Server::CREATABLE,
@@ -274,6 +285,7 @@ final class SettingsPage {
             'retention_days'      => self::retention_days(),        // null = unlimited history
             'max_backfill_months' => self::max_backfill_months(),   // null = unlimited
             'backfill'           => self::backfill_progress(),      // live import progress for the UI
+            'store_stats'        => self::store_stats(),            // 30-day KPI snapshot (null = hide)
             'plugin_version'     => WC_MCP_VERSION,
         ]);
     }
@@ -362,6 +374,74 @@ final class SettingsPage {
             return null; // unlimited
         }
         return max(1, (int) ceil($days / 30));
+    }
+
+    /**
+     * At-a-glance store KPIs for the last 30 days, read from the pre-aggregated
+     * HPOS analytics table (wp_wc_order_stats). The window is fixed at 30 days
+     * for every plan — it's a headline snapshot, not the (plan-capped) sync
+     * range. Cached briefly so the 30s status poll doesn't re-run the aggregate.
+     *
+     * Returns null when WooCommerce/stats aren't available or there are no
+     * qualifying orders, so the UI can cleanly hide the section.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function store_stats(): ?array {
+        $cached = get_transient('wc_mcp_store_stats');
+        if (is_array($cached)) {
+            return $cached['orders'] > 0 ? $cached : null;
+        }
+
+        if (!function_exists('WC') || !function_exists('get_woocommerce_currency')) {
+            return null;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'wc_order_stats';
+
+        // Guard: the analytics table may not exist yet (fresh install / analytics
+        // disabled). Avoid a fatal SQL error — just skip the section.
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return null;
+        }
+
+        // Same status set + local-date convention as the MCP sales tool, so the
+        // dashboard snapshot and the AI answers agree.
+        $statuses   = "'wc-completed','wc-processing','wc-shipped'";
+        $start_date = date('Y-m-d', strtotime('-30 days')) . ' 00:00:00';
+        $end_date   = date('Y-m-d') . ' 23:59:59';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT
+                    COUNT(order_id)                               AS orders,
+                    COALESCE(SUM(total_sales), 0)                 AS revenue,
+                    ROUND(COALESCE(SUM(total_sales) / NULLIF(COUNT(order_id), 0), 0), 2) AS avg_order_value,
+                    COUNT(DISTINCT customer_id)                   AS unique_buyers
+                 FROM {$table}
+                 WHERE status IN ({$statuses})
+                   AND date_created BETWEEN %s AND %s",
+                $start_date,
+                $end_date
+            ),
+            ARRAY_A
+        );
+
+        $stats = [
+            'currency'        => get_woocommerce_currency(),
+            'revenue'         => (float) ($row['revenue'] ?? 0),
+            'avg_order_value' => (float) ($row['avg_order_value'] ?? 0),
+            'orders'          => (int)   ($row['orders'] ?? 0),
+            'unique_buyers'   => (int)   ($row['unique_buyers'] ?? 0),
+            'window_days'     => 30,
+        ];
+
+        set_transient('wc_mcp_store_stats', $stats, 5 * MINUTE_IN_SECONDS);
+
+        return $stats['orders'] > 0 ? $stats : null;
     }
 
     /**
@@ -499,6 +579,9 @@ final class SettingsPage {
     private static function reset_sync_state(): void {
         delete_option('wc_mcp_backfill_complete');
         delete_option('wc_mcp_backfill_offset');
+        delete_option('wc_mcp_backfill_since');
+        delete_option('wc_mcp_backfill_processed');
+        delete_option('wc_mcp_backfill_batch_attempts');
         delete_option('wc_mcp_last_sync_timestamp');
         delete_option('wc_mcp_sync_error');
 
@@ -550,6 +633,47 @@ final class SettingsPage {
         return new \WP_REST_Response(['success' => true, 'message' => 'Delta sync queued.']);
     }
 
+    /**
+     * REST: POST /wc-mcp/v1/backfill/restart
+     * Re-runs the full historical import for the currently saved backfill range.
+     * Used after a plan upgrade widens the allowed window (or to redo an import).
+     * Clears the previous cursor/total/completion marker and any in-flight batches,
+     * then reschedules from offset 0. The retention clamp in BackfillWorker still
+     * applies, so a free store can't pull beyond its 30-day window this way.
+     */
+    public function handle_backfill_restart(\WP_REST_Request $request): \WP_REST_Response {
+        if (get_option('wc_mcp_connection_mode', 'local_bridge') !== 'cloud_sync') {
+            return new \WP_REST_Response([
+                'success' => false,
+                'message' => 'Re-import is only available in Cloud Sync mode.',
+            ], 400);
+        }
+
+        if (!get_option('wc_mcp_tenant_id')) {
+            return new \WP_REST_Response([
+                'success' => false,
+                'message' => 'Store is not connected to Clariq.',
+            ], 400);
+        }
+
+        // Clear the previous import's state so progress + status reset cleanly.
+        delete_option('wc_mcp_backfill_complete');
+        delete_option('wc_mcp_backfill_offset');
+        delete_option('wc_mcp_backfill_since');
+        delete_option('wc_mcp_backfill_processed');
+        delete_option('wc_mcp_backfill_batch_attempts');
+        delete_option('wc_mcp_backfill_total');
+
+        // Drop any pending batches so maybe_schedule_backfill() enqueues fresh.
+        if (function_exists('as_unschedule_all_actions')) {
+            as_unschedule_all_actions('wc_mcp_backfill_batch', [], 'wc-mcp');
+        }
+
+        \Clariq\McpPlugin\Sync\BackfillWorker::maybe_schedule_backfill();
+
+        return new \WP_REST_Response(['success' => true, 'message' => 'Historical re-import queued.']);
+    }
+
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
@@ -596,7 +720,18 @@ final class SettingsPage {
         $offset = get_option('wc_mcp_backfill_offset', false);
 
         if ($status === 'complete') {
-            $processed = $total;
+            // Report the TRUE number of orders sent (persisted at completion),
+            // not a forced `= $total`. These can differ when the run ended with
+            // fewer orders than the initial count implied (e.g. orders deleted
+            // mid-run, or a status-set mismatch between the count and fetch
+            // queries). Falling back to $total only when the real figure is
+            // missing (older installs that completed before this was tracked).
+            $processed = (int) get_option('wc_mcp_backfill_processed', $total);
+            // Never display more than we counted, and if we somehow sent the full
+            // set, snap to total so the bar reads a clean 100%.
+            if ($processed > $total && $total > 0) {
+                $processed = $total;
+            }
         } else {
             $processed = ($offset !== false) ? (int) $offset : 0;
         }

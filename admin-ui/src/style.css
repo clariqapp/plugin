@@ -251,6 +251,117 @@
 
 .clq-banner__aside { margin-left: auto; flex-shrink: 0; }
 
+/* connected banner aside: Live pill stacked over the dashboard link */
+.clq-banner__aside-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.clq-banner__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--clq-primary-dark);
+  text-decoration: none;
+  transition: color var(--clq-ease);
+}
+.clq-banner__link:hover { color: var(--clq-primary); }
+.clq-banner__link svg { width: 14px; height: 14px; }
+
+/* ============================================================
+   Store KPIs (30-day snapshot strip under the banner)
+   ============================================================ */
+
+.clq-stats {
+  margin-bottom: 22px;
+}
+
+.clq-stats__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.clq-stats__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--clq-text-muted);
+}
+
+.clq-stats__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.clq-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  background: var(--clq-surface);
+  border: 1px solid var(--clq-border);
+  border-radius: var(--clq-r-lg);
+  box-shadow: var(--clq-shadow-xs);
+  transition: border-color var(--clq-ease), box-shadow var(--clq-ease);
+}
+.clq-stat-card:hover {
+  border-color: var(--clq-border-strong);
+  box-shadow: var(--clq-shadow-sm);
+}
+
+.clq-stat-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background: var(--clq-surface-2);
+  border: 1px solid var(--clq-border);
+  color: var(--clq-text-muted);
+}
+.clq-stat-card__icon svg { width: 18px; height: 18px; }
+
+.clq-stat-card--accent .clq-stat-card__icon {
+  background: var(--clq-primary-tint);
+  border-color: var(--clq-primary-soft);
+  color: var(--clq-primary-dark);
+}
+
+.clq-stat-card__body { min-width: 0; }
+
+.clq-stat-card__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--clq-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clq-stat-card__value {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--clq-ink);
+  margin-top: 2px;
+}
+.clq-stat-card--accent .clq-stat-card__value { color: var(--clq-primary-dark); }
+
+@media (max-width: 782px) {
+  .clq-stats__grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* ============================================================
    Tabs (underline style — Cloudflare / WooCommerce familiar)
    ============================================================ */
@@ -888,6 +999,16 @@
 }
 .clq-linklike:hover { color: var(--clq-primary); }
 
+/* inline anchor link used inside notices (e.g. upgrade CTA) */
+.clq-link {
+  color: var(--clq-primary-dark);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--clq-ease);
+}
+.clq-link:hover { color: var(--clq-primary); }
+
 /* ============================================================
    Skeleton & spinner
    ============================================================ */
@@ -996,6 +1117,19 @@
   margin-top: 6px;
   font-size: 12px;
   color: var(--clq-text-muted);
+}
+
+/* Re-import action (shown after a completed backfill) */
+.clq-reimport {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--clq-border-soft);
+}
+.clq-reimport__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
 /* ============================================================

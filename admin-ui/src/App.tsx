@@ -5,11 +5,12 @@ import { ConnectionPanel }      from './components/ConnectionPanel';
 import { BridgeSetupPanel }     from './components/BridgeSetupPanel';
 import { SyncControls }         from './components/SyncControls';
 import { HealthStatus }         from './components/HealthStatus';
+import { StoreStats }           from './components/StoreStats';
 import {
   CloudIcon, ShieldIcon, PlugIcon, SyncIcon, PulseIcon,
   CheckIcon, ArrowRightIcon,
 } from './components/icons';
-import { saveSettings, ConnectionMode } from './lib/api';
+import { saveSettings, restartBackfill, ConnectionMode } from './lib/api';
 import { useStatus }            from './hooks/useStatus';
 import './style.css';
 
@@ -39,6 +40,7 @@ export function App() {
     maxBackfillMonths: initialMaxBackfillMonths,
     retentionDays: initialRetentionDays,
     siteUrl,
+    clariqUrl,
   } = window.wcMcpData;
 
   const { status, loading, error, refresh } = useStatus();
@@ -53,6 +55,11 @@ export function App() {
   const [mode,                setMode]                = useState<ConnectionMode>(initialMode);
   const [backfillRange,       setBackfillRange]       = useState(clampRange(Number(initialRange)));
   const [syncHour,            setSyncHour]            = useState(Number(initialSyncHour ?? 2));
+  // Saved baseline the dirty-check compares against. Initialised to the *clamped*
+  // range so a plan cap (e.g. free → 30 days) doesn't read as an unsaved change,
+  // and advanced on every successful save so the bar clears after saving.
+  const [savedRange,          setSavedRange]          = useState(clampRange(Number(initialRange)));
+  const [savedHour,           setSavedHour]           = useState(Number(initialSyncHour ?? 2));
   const [isConnected,         setIsConnected]         = useState(initialConnected);
   const [backfillStatus,      setBackfillStatus]      = useState(initialBackfillStatus);
   const [backfillCompletedAt, setBackfillCompletedAt] = useState(initialBackfillCompletedAt);
@@ -65,8 +72,9 @@ export function App() {
   const [activeTab,           setActiveTab]           = useState<TabId>('connection');
 
   useEffect(() => {
-    if (maxBackfillMonths != null && backfillRange > maxBackfillMonths) {
-      setBackfillRange(maxBackfillMonths);
+    if (maxBackfillMonths != null) {
+      setBackfillRange(r => Math.min(r, maxBackfillMonths));
+      setSavedRange(r => Math.min(r, maxBackfillMonths));
     }
   }, [maxBackfillMonths]);
 
@@ -118,6 +126,8 @@ export function App() {
     setSaveMsg(null);
     try {
       await saveSettings({ backfill_range: backfillRange, sync_hour: syncHour });
+      setSavedRange(backfillRange);
+      setSavedHour(syncHour);
       setSaveMsg('Your changes have been saved.');
       refresh();
     } catch {
@@ -129,20 +139,46 @@ export function App() {
   }
 
   const isDirty =
-    backfillRange !== Number(initialRange) ||
-    syncHour !== Number(initialSyncHour ?? 2);
+    backfillRange !== savedRange ||
+    syncHour !== savedHour;
+
+  // Re-run the historical import for the currently selected range. Persists the
+  // range first (so a just-changed selection is honoured and the save bar clears),
+  // then asks the server to restart the backfill from scratch.
+  async function handleReimport() {
+    await saveSettings({ backfill_range: backfillRange, sync_hour: syncHour });
+    setSavedRange(backfillRange);
+    setSavedHour(syncHour);
+    await restartBackfill();
+    refresh();
+  }
 
   const displaySite = (siteUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
   // ── Status banner (at-a-glance) ─────────────────────────────────────────
   let banner: { variant: string; icon: ReactNode; title: string; desc: ReactNode; pill: ReactNode };
   if (mode === 'cloud_sync' && isConnected) {
+    const dashboardUrl = (clariqUrl || '').replace(/\/$/, '');
     banner = {
       variant: 'connected',
       icon: <CheckIcon />,
       title: 'Your store is connected',
       desc: <>Analytics are syncing to your Clariq workspace for <code>{displaySite || 'your store'}</code>.</>,
-      pill: <span className="clq-pill clq-pill--ok"><span className="clq-dot clq-dot--green" />Live</span>,
+      pill: (
+        <div className="clq-banner__aside-stack">
+          <span className="clq-pill clq-pill--ok"><span className="clq-dot clq-dot--green" />Live</span>
+          {dashboardUrl && (
+            <a
+              className="clq-banner__link"
+              href={dashboardUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open dashboard <ArrowRightIcon />
+            </a>
+          )}
+        </div>
+      ),
     };
   } else if (mode === 'cloud_sync') {
     banner = {
@@ -198,6 +234,9 @@ export function App() {
         </div>
         <div className="clq-banner__aside">{banner.pill}</div>
       </div>
+
+      {/* ── Store KPIs (last 30 days) ── */}
+      {status?.store_stats && <StoreStats stats={status.store_stats} />}
 
       {/* ── Tabs ── */}
       <div className="clq-tabs" role="tablist">
@@ -278,6 +317,8 @@ export function App() {
               plan={plan}
               retentionDays={retentionDays}
               maxBackfillMonths={maxBackfillMonths}
+              upgradeUrl={clariqUrl ? `${clariqUrl.replace(/\/$/, '')}/settings` : undefined}
+              onReimport={handleReimport}
             />
           ) : (
             <BridgeSetupPanel />

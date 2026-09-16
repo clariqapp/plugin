@@ -21,6 +21,14 @@ export interface StatusResponse {
     completed_at: string;
     window_label: string;
   };
+  store_stats?: {
+    currency:        string;
+    revenue:         number;
+    avg_order_value: number;
+    orders:          number;
+    unique_buyers:   number;
+    window_days:     number;
+  } | null;
   plugin_version:  string;
 }
 
@@ -67,6 +75,13 @@ export async function disconnect(): Promise<void> {
 export async function syncNow(): Promise<void> {
   await apiFetch({
     url:    `${base}sync-now`,
+    method: 'POST',
+  });
+}
+
+export async function restartBackfill(): Promise<void> {
+  await apiFetch({
+    url:    `${base}backfill/restart`,
     method: 'POST',
   });
 }

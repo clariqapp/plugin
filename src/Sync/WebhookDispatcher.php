@@ -18,6 +18,13 @@ namespace Clariq\McpPlugin\Sync;
 final class WebhookDispatcher {
 
     private const REQUEST_TIMEOUT  = 10;
+    // Batch ingest is a background bulk operation: a full page of orders means
+    // dozens of upserts against a (possibly remote) Postgres, which can take well
+    // over the 10s used for single fire-and-forget webhooks. A tight timeout here
+    // caused the plugin to disconnect mid-request, stranding the server-side
+    // transaction with its row locks held — which then blocked every following
+    // batch and exhausted the API's connection pool. Give batches real headroom.
+    private const BATCH_REQUEST_TIMEOUT = 60;
     private const MAX_RETRIES      = 3;
     private const BASE_BACKOFF     = 1; // seconds
 
@@ -100,7 +107,7 @@ final class WebhookDispatcher {
 
         for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
             $response = wp_remote_post(self::ingest_url() . '/batch', [
-                'timeout' => self::REQUEST_TIMEOUT,
+                'timeout' => self::BATCH_REQUEST_TIMEOUT,
                 'headers' => $headers,
                 'body'    => $body,
             ]);

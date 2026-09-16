@@ -107,3 +107,34 @@ export const SparkIcon = svg(
 );
 
 export const ArrowRightIcon = svg(<path d="M5 12h14M13 6l6 6-6 6" />);
+
+export const CoinsIcon = svg(
+  <>
+    <circle cx="9" cy="9" r="5.5" />
+    <path d="M15.5 4.2a5.5 5.5 0 0 1 0 10.6" />
+    <path d="M7 9h4M9 7v4" />
+  </>
+);
+
+export const TagIcon = svg(
+  <>
+    <path d="M4 4h7l9 9-7 7-9-9V4z" />
+    <path d="M8.5 8.5h.01" />
+  </>
+);
+
+export const BagIcon = svg(
+  <>
+    <path d="M6 8h12l-1 12H7L6 8z" />
+    <path d="M9 8V6a3 3 0 0 1 6 0v2" />
+  </>
+);
+
+export const UsersIcon = svg(
+  <>
+    <circle cx="9" cy="8" r="3.2" />
+    <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+    <path d="M16 5.2a3.2 3.2 0 0 1 0 5.9" />
+    <path d="M17.5 13.5a5.5 5.5 0 0 1 3 5" />
+  </>
+);
