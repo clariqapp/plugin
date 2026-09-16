@@ -71,7 +71,7 @@ final class WebhookDispatcher {
      * Retries up to MAX_RETRIES times on transient failures.
      *
      * @param array<int, array<string, mixed>> $orders
-     * @param int                              $cursor Current backfill offset sent to API.
+     * @param int                              $cursor Progress count (orders sent so far) sent to the API.
      * @param string                           $event  The event type name.
      * @return array<string, mixed>|null  Decoded API response body, or null on total failure.
      */

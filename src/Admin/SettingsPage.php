@@ -578,7 +578,7 @@ final class SettingsPage {
      */
     private static function reset_sync_state(): void {
         delete_option('wc_mcp_backfill_complete');
-        delete_option('wc_mcp_backfill_offset');
+        delete_option('wc_mcp_backfill_last_id');
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_processed');
         delete_option('wc_mcp_backfill_batch_attempts');
@@ -597,7 +597,7 @@ final class SettingsPage {
      * stale sync state cleaned up.
      */
     private static function has_stale_sync_state(): bool {
-        if (get_option('wc_mcp_backfill_offset') !== false
+        if (get_option('wc_mcp_backfill_last_id') !== false
             || get_option('wc_mcp_backfill_complete')
             || get_option('wc_mcp_last_sync_timestamp')) {
             return true;
@@ -658,7 +658,7 @@ final class SettingsPage {
 
         // Clear the previous import's state so progress + status reset cleanly.
         delete_option('wc_mcp_backfill_complete');
-        delete_option('wc_mcp_backfill_offset');
+        delete_option('wc_mcp_backfill_last_id');
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_processed');
         delete_option('wc_mcp_backfill_batch_attempts');
@@ -688,16 +688,17 @@ final class SettingsPage {
      * @return 'idle'|'running'|'complete'
      */
     private static function get_backfill_status(): string {
-        // A backfill_offset in wp_options means a batch run is in progress (cursor is live).
-        $offset_exists = get_option('wc_mcp_backfill_offset') !== false;
+        // A live keyset cursor (wc_mcp_backfill_last_id) means a batch run is in
+        // progress. It exists for the duration of a run and is deleted on completion.
+        $cursor_exists = get_option('wc_mcp_backfill_last_id') !== false;
 
         // A live cursor is the only unambiguous signal of an in-flight run.
-        if ($offset_exists) {
+        if ($cursor_exists) {
             return 'running';
         }
 
         // Completion is AUTHORITATIVE once the cursor is gone. process_batch()
-        // deletes wc_mcp_backfill_offset and sets wc_mcp_backfill_complete when a
+        // deletes wc_mcp_backfill_last_id and sets wc_mcp_backfill_complete when a
         // run finishes. A stray/duplicate wc_mcp_backfill_batch action can linger
         // in the Action Scheduler queue after that (it no-ops via process_batch()'s
         // completion guard when it fires) — but if we let a merely-queued action
@@ -722,18 +723,20 @@ final class SettingsPage {
     /**
      * Live progress of the historical import, for the admin UI.
      *
-     * `processed` is the running cursor (orders sent so far) while the import is
-     * in flight, and the final total once complete (the cursor option is deleted
-     * on completion). `total` is counted on the first batch. `window_label` is the
-     * date range the import targets. Together these let the UI show a progress bar
-     * and "X / Y orders" without any realtime channel — the merchant refreshes.
+     * `processed` is the running count of orders sent so far (Phase 3:
+     * wc_mcp_backfill_processed, incremented per confirmed batch) while the
+     * import is in flight, and the final count once complete. It is NOT derived
+     * from the keyset cursor (wc_mcp_backfill_last_id) — that holds an order id,
+     * not a count, and would read as a meaningless huge number. `total` is
+     * counted on the first batch. `window_label` is the date range the import
+     * targets. Together these let the UI show a progress bar and "X / Y orders"
+     * without any realtime channel — the merchant refreshes.
      *
      * @return array{status:string, processed:int, total:int, completed_at:string, window_label:string}
      */
     private static function backfill_progress(): array {
         $status = self::get_backfill_status();
         $total  = (int) get_option('wc_mcp_backfill_total', 0);
-        $offset = get_option('wc_mcp_backfill_offset', false);
 
         if ($status === 'complete') {
             // Report the TRUE number of orders sent (persisted at completion),
@@ -749,7 +752,8 @@ final class SettingsPage {
                 $processed = $total;
             }
         } else {
-            $processed = ($offset !== false) ? (int) $offset : 0;
+            // In flight (or idle): the live running count of confirmed orders.
+            $processed = (int) get_option('wc_mcp_backfill_processed', 0);
         }
 
         return [

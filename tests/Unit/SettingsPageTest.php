@@ -26,7 +26,7 @@ final class SettingsPageTest extends \Clariq\McpPlugin\Tests\TestCase {
             'wc_mcp_last_sync_timestamp'  => 0,
             'wc_mcp_bridge_latency'       => false,
             'wc_mcp_backfill_complete'    => false,
-            'wc_mcp_backfill_offset'      => false,
+            'wc_mcp_backfill_last_id'     => false,
             'wc_mcp_backfill_range'       => '12',
             'wc_mcp_sync_hour'            => 2,
         ];
@@ -140,7 +140,7 @@ final class SettingsPageTest extends \Clariq\McpPlugin\Tests\TestCase {
             'get_option' => self::option_stub([
                 'wc_mcp_connection_mode'  => 'cloud_sync',
                 'wc_mcp_tenant_id'        => '',
-                'wc_mcp_backfill_offset'  => '250',
+                'wc_mcp_backfill_last_id' => '250',
             ]),
             'update_option' => true,
             'delete_option' => function (string $key) use (&$deleted) {
@@ -154,7 +154,7 @@ final class SettingsPageTest extends \Clariq\McpPlugin\Tests\TestCase {
         $data = $response->get_data();
 
         $this->assertFalse($data['is_connected']);
-        $this->assertContains('wc_mcp_backfill_offset', $deleted);
+        $this->assertContains('wc_mcp_backfill_last_id', $deleted);
         $this->assertContains('wc_mcp_last_sync_timestamp', $deleted);
     }
 

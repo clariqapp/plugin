@@ -72,7 +72,7 @@ class BackfillWorkerTest extends TestCase {
     // trigger_force_sync()
     // -----------------------------------------------------------------------
 
-    public function test_force_sync_resets_offset_and_enqueues_batch(): void {
+    public function test_force_sync_resets_cursor_and_enqueues_batch(): void {
         $stored   = [];
         $enqueued = false;
 
@@ -80,6 +80,7 @@ class BackfillWorkerTest extends TestCase {
             $stored[$key] = $val;
             return true;
         });
+        Functions\when('delete_option')->justReturn(true);
         Functions\when('as_enqueue_async_action')->alias(function () use (&$enqueued): int {
             $enqueued = true;
             return 1;
@@ -90,8 +91,8 @@ class BackfillWorkerTest extends TestCase {
 
         BackfillWorker::trigger_force_sync();
 
-        $this->assertSame(0, $stored['wc_mcp_backfill_offset'] ?? -1,
-            'Backfill offset must be reset to 0 on force sync.');
+        $this->assertSame(0, $stored['wc_mcp_backfill_last_id'] ?? -1,
+            'Backfill keyset cursor must be reset to 0 on force sync.');
         $this->assertTrue($enqueued,
             'A new batch action must be enqueued after force sync.');
     }

@@ -8,10 +8,12 @@ namespace Clariq\McpPlugin\Sync;
  * Handles historical order backfill via Action Scheduler.
  *
  * Strategy:
- *  - Processes HPOS orders in pages of 250.
+ *  - Processes HPOS orders in keyset-paginated pages of BATCH_SIZE (id > last_id).
  *  - Checks PHP memory headroom before each batch to prevent OOM crashes.
- *  - Stores a cursor offset in wp_options so batches can resume after failures.
- *  - Only active when connection_mode = 'option_a' (warehouse sync).
+ *  - Stores a server-confirmed keyset cursor (wc_mcp_backfill_last_id) in
+ *    wp_options so batches resume after failures without skipping or duplicating
+ *    orders; progress is tracked separately (wc_mcp_backfill_processed).
+ *  - Only active when connection_mode = 'cloud_sync' (warehouse sync).
  */
 final class BackfillWorker {
 
@@ -44,7 +46,7 @@ final class BackfillWorker {
         // this run recomputes $since fresh and presents a clean "running" state
         // (the completion guard in process_batch keys off wc_mcp_backfill_complete,
         // so it must be cleared here for a legitimate new/re-import run to proceed).
-        update_option('wc_mcp_backfill_offset', 0);
+        update_option('wc_mcp_backfill_last_id', 0);
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_complete');
         delete_option('wc_mcp_backfill_processed');
@@ -60,16 +62,16 @@ final class BackfillWorker {
             return; // Local Bridge does not need warehouse sync.
         }
 
-        // Completion is sticky. A finished run deletes wc_mcp_backfill_offset and
+        // Completion is sticky. A finished run deletes wc_mcp_backfill_last_id and
         // sets wc_mcp_backfill_complete. If a stray/duplicate scheduled action
         // fires after that (e.g. a leftover queued batch, a double-enqueue, or a
         // retry that outlived the run), it must NOT restart the whole backfill:
-        // with no live offset the cursor would default to 0 and $since would be
+        // with no live cursor the keyset would default to 0 and $since would be
         // recomputed, silently re-importing everything from scratch. Bail out
         // unless there is a live cursor (an in-flight run) to resume. A genuine
         // re-import goes through maybe_schedule_backfill(), which clears the
-        // complete flag and seeds offset=0 first, so it is unaffected by this.
-        if (get_option('wc_mcp_backfill_offset') === false && get_option('wc_mcp_backfill_complete')) {
+        // complete flag and seeds last_id=0 first, so it is unaffected by this.
+        if (get_option('wc_mcp_backfill_last_id') === false && get_option('wc_mcp_backfill_complete')) {
             return;
         }
 
@@ -79,10 +81,14 @@ final class BackfillWorker {
             return;
         }
 
-        $offset = (int) get_option('wc_mcp_backfill_offset', 0);
+        // Keyset cursor: the highest order id the SaaS API has CONFIRMED as
+        // persisted (0 on the first page). Pages are fetched with `id > last_id`,
+        // so this is a durable resume point, not a row count. Progress shown in
+        // the UI is tracked independently via wc_mcp_backfill_processed.
+        $last_id = (int) get_option('wc_mcp_backfill_last_id', 0);
 
         // The date floor ($since) MUST stay fixed for the entire run: it is
-        // derived once (on the first batch, offset === 0) from the range/
+        // derived once (on the first batch, last_id === 0) from the range/
         // retention settings at that moment, and persisted to wc_mcp_backfill_since.
         // Recomputing it fresh from wc_mcp_backfill_range on every batch (the old
         // behaviour) let a merchant change the "how much history" dropdown while
@@ -100,7 +106,7 @@ final class BackfillWorker {
         // Count total orders on first batch for progress tracking, and lock the
         // $since floor used for the rest of this run.
         $backfill_total = null;
-        if ($offset === 0 || $since === false) {
+        if ($last_id === 0 || $since === false) {
             $range = (int) get_option('wc_mcp_backfill_range', 12);
             $since = date('Y-m-d H:i:s', strtotime("-{$range} months"));
 
@@ -122,21 +128,27 @@ final class BackfillWorker {
             update_option('wc_mcp_backfill_total', $backfill_total);
         }
 
-        $orders = self::fetch_orders($offset, $since);
+        $orders = self::fetch_orders($last_id, $since);
+
+        // Progress counter (orders sent so far this run), tracked independently of
+        // the keyset cursor. This is the value the server treats as its progress
+        // `cursor` (cursor==0 marks the start of a run and resets server-side
+        // tracking) and the numerator the admin UI displays.
+        $processed_before = (int) get_option('wc_mcp_backfill_processed', 0);
 
         if (empty($orders)) {
-            // Backfill complete. Send a completion event to SaaS API.
+            // Backfill complete. Send a completion event to SaaS API, passing the
+            // final processed count as the progress cursor so the server snaps its
+            // backfill_cursor to 100%.
             $dispatcher = new WebhookDispatcher();
-            $dispatcher->dispatch_batch([], $offset, 'backfill_complete');
+            $dispatcher->dispatch_batch([], $processed_before, 'backfill_complete');
 
-            // Persist the true number of orders actually sent (the final cursor)
-            // so the UI can report real progress after completion. This may be
-            // LESS than wc_mcp_backfill_total if the run ended early (e.g. all
-            // matching orders fit in fewer batches than the initial count implied),
-            // so the UI shows an honest "N of M" rather than a forced 100%.
-            update_option('wc_mcp_backfill_processed', $offset);
+            // wc_mcp_backfill_processed already holds the true number of orders
+            // sent (incremented per confirmed batch below), which may be LESS than
+            // wc_mcp_backfill_total if the run ended early — the UI then shows an
+            // honest "N of M" rather than a forced 100%.
 
-            delete_option('wc_mcp_backfill_offset');
+            delete_option('wc_mcp_backfill_last_id');
             delete_option('wc_mcp_backfill_since'); // Locked window is consumed; next run recomputes.
             delete_option('wc_mcp_backfill_batch_attempts');
             update_option('wc_mcp_last_sync_timestamp', time());
@@ -150,20 +162,20 @@ final class BackfillWorker {
         self::attach_coupons($orders);
 
         $dispatcher = new WebhookDispatcher();
-        $result     = $dispatcher->dispatch_batch($orders, $offset, 'backfill_batch', $backfill_total);
+        $result     = $dispatcher->dispatch_batch($orders, $processed_before, 'backfill_batch', $backfill_total);
 
         // Dispatch outcome handling.
         //
         // CRITICAL: only advance the cursor when the batch was actually accepted
         // by the SaaS API. dispatch_batch() returns null when it exhausts its
         // retries (network error, 5xx, timeout, etc.). The previous code advanced
-        // past the batch anyway ($offset + count), which silently DROPPED those
-        // orders — they were never persisted server-side yet the cursor moved on,
-        // so the run would reach the empty page and mark "complete" with a hole in
-        // the data (this is what left the most-recent orders missing from the
-        // warehouse while the plugin reported 100%). Instead we now retry the SAME
-        // offset with a bounded attempt counter, and hard-stop (surfacing an error)
-        // rather than skipping if it keeps failing.
+        // past the batch anyway, which silently DROPPED those orders — they were
+        // never persisted server-side yet the cursor moved on, so the run would
+        // reach the empty page and mark "complete" with a hole in the data (this
+        // is what left the most-recent orders missing from the warehouse while
+        // the plugin reported 100%). Instead we now retry the SAME cursor with a
+        // bounded attempt counter, and hard-stop (surfacing an error) rather than
+        // skipping if it keeps failing.
         if (!is_array($result)) {
             $attempts = (int) get_option('wc_mcp_backfill_batch_attempts', 0) + 1;
 
@@ -175,7 +187,7 @@ final class BackfillWorker {
                 update_option('wc_mcp_sync_error', 'backfill_batch_failed');
                 delete_option('wc_mcp_backfill_batch_attempts');
                 self::log(
-                    sprintf('Backfill batch at offset %d failed %d times — pausing run.', $offset, $attempts),
+                    sprintf('Backfill batch after id %d failed %d times — pausing run.', $last_id, $attempts),
                     'error'
                 );
                 return;
@@ -183,10 +195,10 @@ final class BackfillWorker {
 
             update_option('wc_mcp_backfill_batch_attempts', $attempts);
             self::log(
-                sprintf('Backfill batch at offset %d failed (attempt %d) — retrying shortly.', $offset, $attempts),
+                sprintf('Backfill batch after id %d failed (attempt %d) — retrying shortly.', $last_id, $attempts),
                 'warning'
             );
-            // Re-run the SAME offset after a short back-off (does not advance).
+            // Re-run the SAME cursor after a short back-off (does not advance).
             as_schedule_single_action(time() + 30, self::ACTION_HOOK, [], self::GROUP);
             return;
         }
@@ -195,22 +207,24 @@ final class BackfillWorker {
         delete_option('wc_mcp_backfill_batch_attempts');
         delete_option('wc_mcp_sync_error');
 
-        // If the API acknowledged a cursor, use it; otherwise advance locally.
-        $new_offset = isset($result['cursor'])
-            ? (int) $result['cursor']
-            : $offset + count($orders);
+        // Highest order id in this page (rows come back ORDER BY id ASC, so the
+        // last one is the max). Used as the local fallback when talking to an
+        // older API that doesn't return max_confirmed_id yet.
+        $local_max = (int) end($orders)['id'];
+        reset($orders);
 
-        // Guard against a non-advancing cursor (e.g. API returned cursor <= offset
-        // because every order in the page failed to upsert). Without this the run
-        // could spin on the same page forever. Force forward progress by at least
-        // the page size so we still make it through the window; the skipped orders
-        // remain recoverable via a later re-import (idempotent upserts).
-        if ($new_offset <= $offset) {
-            $new_offset = $offset + count($orders);
-        }
+        // Advance the keyset cursor to the id the API CONFIRMED it persisted.
+        // Because a successful batch is all-or-nothing server-side, the confirmed
+        // id equals $local_max; we fall back to $local_max only for older servers
+        // that omit the field. Never regress below what we already fetched past.
+        $max_confirmed = isset($result['max_confirmed_id'])
+            ? (int) $result['max_confirmed_id']
+            : $local_max;
+        $new_last_id = $max_confirmed > $last_id ? $max_confirmed : $local_max;
 
-        // Advance cursor.
-        update_option('wc_mcp_backfill_offset', $new_offset);
+        // Advance progress + keyset cursor.
+        update_option('wc_mcp_backfill_processed', $processed_before + count($orders));
+        update_option('wc_mcp_backfill_last_id', $new_last_id);
         update_option('wc_mcp_last_sync_timestamp', time());
 
         // Schedule next page immediately.
@@ -221,8 +235,9 @@ final class BackfillWorker {
      * Force sync: resets the cursor and reschedules a full backfill.
      */
     public static function trigger_force_sync(): void {
-        update_option('wc_mcp_backfill_offset', 0);
+        update_option('wc_mcp_backfill_last_id', 0);
         delete_option('wc_mcp_backfill_since');
+        delete_option('wc_mcp_backfill_processed');
         as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
         self::log('Force sync triggered.', 'info');
     }
@@ -247,7 +262,7 @@ final class BackfillWorker {
      * "Importing…" rather than a dead idle screen even before the first batch runs.
      */
     public static function start_backfill_now(): void {
-        update_option('wc_mcp_backfill_offset', 0);
+        update_option('wc_mcp_backfill_last_id', 0);
         delete_option('wc_mcp_backfill_since');
         delete_option('wc_mcp_backfill_complete');
         delete_option('wc_mcp_backfill_processed');
@@ -265,9 +280,19 @@ final class BackfillWorker {
      * Fetch a page of orders from HPOS tables using $wpdb directly.
      * Avoids loading full WC_Order objects to keep memory footprint minimal.
      *
+     * Phase 3: keyset pagination. Instead of `LIMIT n OFFSET m` — which grows
+     * more expensive per page and, worse, silently shifts rows if any order in
+     * the window changes between pages — we page by primary key:
+     * `WHERE o.id > :last_id ORDER BY o.id ASC LIMIT n`. Combined with the
+     * server-confirmed `$last_id` (only advanced to an id the API actually
+     * persisted), this makes the scan stable, index-friendly, and resumable:
+     * a crash/restart re-reads from exactly the last confirmed id with no
+     * skipped or duplicated orders.
+     *
+     * @param int    $last_id Highest confirmed order id so far (0 on first page).
      * @return array<int, array<string, mixed>>
      */
-    private static function fetch_orders(int $offset, string $since): array {
+    private static function fetch_orders(int $last_id, string $since): array {
         global $wpdb;
 
         // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared
@@ -305,11 +330,12 @@ final class BackfillWorker {
                 WHERE o.type = 'shop_order'
                   AND o.status IN ('wc-completed','wc-processing','wc-shipped','wc-refunded','wc-cancelled')
                   AND o.date_created_gmt >= %s
+                  AND o.id > %d
                 ORDER BY o.id ASC
-                LIMIT %d OFFSET %d",
+                LIMIT %d",
                 $since,
-                self::BATCH_SIZE,
-                $offset
+                $last_id,
+                self::BATCH_SIZE
             ),
             ARRAY_A
         );
