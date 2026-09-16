@@ -296,8 +296,17 @@ final class BackfillWorker {
         update_option('wc_mcp_backfill_last_id', $new_last_id);
         update_option('wc_mcp_last_sync_timestamp', time());
 
-        // Schedule next page immediately.
-        as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
+        // Schedule the next page. Phase 6 server-owned pacing: if the server
+        // asked us to slow down (next_batch_delay > 0, scaled to its current
+        // pool pressure), honour it by scheduling the next batch after that
+        // delay instead of firing immediately. This lets the server meter
+        // aggregate load across all tenants short of having to shed with 429.
+        $delay = isset($result['next_batch_delay']) ? max(0, (int) $result['next_batch_delay']) : 0;
+        if ($delay > 0) {
+            as_schedule_single_action(time() + $delay, self::ACTION_HOOK, [], self::GROUP);
+        } else {
+            as_enqueue_async_action(self::ACTION_HOOK, [], self::GROUP);
+        }
     }
 
     /**
