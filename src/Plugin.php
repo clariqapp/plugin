@@ -6,6 +6,8 @@ namespace Clariq\McpPlugin;
 
 use Clariq\McpPlugin\Admin\SettingsPage;
 use Clariq\McpPlugin\Bridge\RestEndpoint;
+use Clariq\McpPlugin\Bridge\WriteEndpoint;
+use Clariq\McpPlugin\Bridge\ReadEndpoint;
 use Clariq\McpPlugin\Security\BridgeKeyManager;
 use Clariq\McpPlugin\Sync\BackfillWorker;
 use Clariq\McpPlugin\Sync\DeltaSyncWorker;
@@ -39,6 +41,14 @@ final class Plugin {
 
         // REST Bridge (Component 2) — always registered; only functional when Option C active.
         add_action('rest_api_init', [new RestEndpoint(), 'register_routes']);
+
+        // Cloud -> WP write relay — always registered; only functional in
+        // cloud_sync mode and only with a valid write-key HMAC signature.
+        add_action('rest_api_init', [new WriteEndpoint(), 'register_routes']);
+
+        // Cloud -> WP live-read relay — same trust boundary as the write relay
+        // (cloud_sync mode + write-key HMAC); non-mutating, no audit.
+        add_action('rest_api_init', [new ReadEndpoint(), 'register_routes']);
 
         // Action Scheduler jobs.
         BackfillWorker::register_hooks();

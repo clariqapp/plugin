@@ -132,6 +132,15 @@ if (!function_exists('admin_url'))         { function admin_url(string $path = '
 if (!function_exists('register_rest_route')) { function register_rest_route(): void {} }
 if (!function_exists('add_action'))        { function add_action(): void {} }
 if (!function_exists('add_filter'))        { function add_filter(): void {} }
+if (!function_exists('apply_filters'))     { function apply_filters(string $tag, mixed $value): mixed { return $value; } }
+if (!function_exists('add_option'))        { function add_option(string $k, mixed $v = '', string $deprecated = '', mixed $autoload = 'yes'): bool { return true; } }
+if (!function_exists('wc_get_order'))      { function wc_get_order(mixed $id): mixed { return false; } }
+if (!function_exists('wc_get_order_notes')) { function wc_get_order_notes(array $args = []): array { return []; } }
+if (!function_exists('wc_get_order_statuses')) { function wc_get_order_statuses(): array { return []; } }
+if (!function_exists('wc_get_product'))    { function wc_get_product(mixed $id = 0): mixed { return false; } }
+if (!function_exists('wc_get_coupon_id_by_code')) { function wc_get_coupon_id_by_code(string $code, int $exclude = 0): int { return 0; } }
+if (!function_exists('get_terms'))         { function get_terms(array $args = []): mixed { return []; } }
+if (!function_exists('get_posts'))         { function get_posts(array $args = []): array { return []; } }
 if (!function_exists('flush_rewrite_rules')) { function flush_rewrite_rules(): void {} }
 if (!function_exists('add_query_arg'))      { function add_query_arg(array|string $args, string $url = ''): string { return $url; } }
 if (!function_exists('sanitize_text_field')) { function sanitize_text_field(string $s): string { return $s; } }
@@ -167,6 +176,108 @@ if (!class_exists('WC_Order')) {
         public function get_billing_country(): string { return ''; }
         public function get_meta(string $key): mixed { return null; }
         public function get_items(?string $type = null): array { return []; }
+        public function add_order_note(string $note, int $is_customer_note = 0, bool $added_by_user = false): int { return 0; }
+    }
+}
+
+// WC_Product stub — methods declared so Mockery can mock the class in tests.
+if (!class_exists('WC_Product')) {
+    class WC_Product {
+        public function get_id(): int { return 0; }
+        public function get_name(): string { return ''; }
+        public function get_type(): string { return 'simple'; }
+        public function get_status(): string { return 'publish'; }
+        public function get_regular_price(mixed $context = 'view'): string { return ''; }
+        public function get_sale_price(mixed $context = 'view'): string { return ''; }
+        public function get_stock_quantity(mixed $context = 'view'): mixed { return null; }
+        public function get_manage_stock(mixed $context = 'view'): bool { return false; }
+        public function get_stock_status(mixed $context = 'view'): string { return 'instock'; }
+        public function get_category_ids(mixed $context = 'view'): array { return []; }
+        public function get_tag_ids(mixed $context = 'view'): array { return []; }
+        public function get_description(mixed $context = 'view'): string { return ''; }
+        public function get_short_description(mixed $context = 'view'): string { return ''; }
+        public function get_image_id(mixed $context = 'view'): mixed { return 0; }
+        public function get_gallery_image_ids(mixed $context = 'view'): array { return []; }
+        public function get_children(): array { return []; }
+        public function get_attributes(mixed $context = 'view'): array { return []; }
+        public function get_sku(mixed $context = 'view'): string { return ''; }
+        public function set_manage_stock(bool $manage): void {}
+        public function set_stock_quantity(mixed $qty): void {}
+        public function set_regular_price(string $price): void {}
+        public function set_sale_price(string $price): void {}
+        public function set_date_on_sale_from(mixed $date): void {}
+        public function set_date_on_sale_to(mixed $date): void {}
+        public function set_name(string $name): void {}
+        public function set_description(string $desc): void {}
+        public function set_short_description(string $desc): void {}
+        public function set_category_ids(array $ids): void {}
+        public function set_tag_ids(array $ids): void {}
+        public function save(): int { return 0; }
+    }
+}
+
+if (!class_exists('WC_Product_Variation')) {
+    class WC_Product_Variation extends WC_Product {
+        public function get_type(): string { return 'variation'; }
+    }
+}
+
+// WC_Coupon functional stub — a property bag, since handlers instantiate it
+// directly (new WC_Coupon(...)) and cannot receive an injected mock.
+if (!class_exists('WC_Coupon')) {
+    class WC_Coupon {
+        /** @var array<string, mixed> */
+        private array $data = [
+            'id'                   => 0,
+            'code'                 => '',
+            'discount_type'        => '',
+            'amount'               => '',
+            'individual_use'       => false,
+            'exclude_sale_items'   => false,
+            'minimum_amount'       => '',
+            'maximum_amount'       => '',
+            'usage_limit'          => null,
+            'date_expires'         => null,
+            'product_ids'          => [],
+            'excluded_product_ids' => [],
+        ];
+
+        public function __construct(mixed $code_or_id = '') {
+            if (is_int($code_or_id) && $code_or_id > 0) {
+                $this->data['id'] = $code_or_id;
+            }
+        }
+
+        public function get_id(): int { return (int) $this->data['id']; }
+        public function get_code(): string { return (string) $this->data['code']; }
+        public function get_discount_type(): string { return (string) $this->data['discount_type']; }
+        public function get_amount(): string { return (string) $this->data['amount']; }
+        public function get_individual_use(): bool { return (bool) $this->data['individual_use']; }
+        public function get_exclude_sale_items(): bool { return (bool) $this->data['exclude_sale_items']; }
+        public function get_minimum_amount(): string { return (string) $this->data['minimum_amount']; }
+        public function get_maximum_amount(): string { return (string) $this->data['maximum_amount']; }
+        public function get_usage_limit(): mixed { return $this->data['usage_limit']; }
+        public function get_product_ids(): array { return (array) $this->data['product_ids']; }
+        public function get_excluded_product_ids(): array { return (array) $this->data['excluded_product_ids']; }
+
+        public function set_code(string $v): void { $this->data['code'] = $v; }
+        public function set_discount_type(string $v): void { $this->data['discount_type'] = $v; }
+        public function set_amount(string $v): void { $this->data['amount'] = $v; }
+        public function set_individual_use(bool $v): void { $this->data['individual_use'] = $v; }
+        public function set_exclude_sale_items(bool $v): void { $this->data['exclude_sale_items'] = $v; }
+        public function set_minimum_amount(string $v): void { $this->data['minimum_amount'] = $v; }
+        public function set_maximum_amount(string $v): void { $this->data['maximum_amount'] = $v; }
+        public function set_usage_limit(int $v): void { $this->data['usage_limit'] = $v; }
+        public function set_date_expires(mixed $v): void { $this->data['date_expires'] = $v; }
+        public function set_product_ids(array $v): void { $this->data['product_ids'] = $v; }
+        public function set_excluded_product_ids(array $v): void { $this->data['excluded_product_ids'] = $v; }
+
+        public function save(): int {
+            if ((int) $this->data['id'] === 0) {
+                $this->data['id'] = 1234; // simulate insert
+            }
+            return (int) $this->data['id'];
+        }
     }
 }
 

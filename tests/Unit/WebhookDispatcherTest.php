@@ -27,6 +27,7 @@ class StubWCOrder extends \WC_Order {
             'payment_method' => 'stripe', 'billing_email' => 'customer@example.com',
             'shipping_city' => 'London', 'shipping_country' => 'GB',
             'billing_city' => '', 'billing_country' => '',
+            'meta' => [],
         ];
         $this->data = array_merge($defaults, $data);
     }
@@ -46,7 +47,7 @@ class StubWCOrder extends \WC_Order {
     public function get_shipping_country(): string { return $this->data['shipping_country']; }
     public function get_billing_city(): string { return $this->data['billing_city']; }
     public function get_billing_country(): string { return $this->data['billing_country']; }
-    public function get_meta(string $key): mixed { return null; }
+    public function get_meta(string $key): mixed { return $this->data['meta'][$key] ?? ''; }
     public function get_items(?string $type = null): array { return []; }
 }
 
@@ -173,6 +174,105 @@ class WebhookDispatcherTest extends TestCase {
         $data = $ref->invoke(null, $order);
 
         $this->assertSame('wc-completed', $data['status']);
+    }
+
+    // -----------------------------------------------------------------------
+    // serialize_order() — WooCommerce 8.5+ session/attribution meta
+    // -----------------------------------------------------------------------
+
+    public function test_serialize_order_includes_session_attribution_when_present(): void {
+        $order = new StubWCOrder([
+            'billing_email' => 'test@test.com',
+            'meta' => [
+                '_wc_order_attribution_source_type'        => 'organic',
+                '_wc_order_attribution_device_type'        => 'Mobile',
+                '_wc_order_attribution_session_entry'      => 'https://shop.example/landing',
+                '_wc_order_attribution_session_start_time' => '2024-05-01 12:34:56',
+                '_wc_order_attribution_session_pages'      => '7',
+                '_wc_order_attribution_session_duration'   => '842',
+            ],
+        ]);
+
+        $ref = new \ReflectionMethod(WebhookDispatcher::class, 'serialize_order');
+        $ref->setAccessible(true);
+
+        $data = $ref->invoke(null, $order);
+
+        $this->assertSame('organic', $data['source_type']);
+        $this->assertSame('Mobile', $data['device_type_attribution']);
+        $this->assertSame('https://shop.example/landing', $data['session_entry']);
+        $this->assertSame('2024-05-01 12:34:56', $data['session_start_time']);
+        // Numeric counters are cast to int.
+        $this->assertSame(7, $data['session_pages']);
+        $this->assertSame(842, $data['session_duration']);
+    }
+
+    public function test_serialize_order_session_attribution_null_when_absent(): void {
+        // No 'meta' provided — mirrors older WooCommerce or admin/API/POS orders
+        // where the WC 8.5+ attribution meta keys simply do not exist.
+        $order = new StubWCOrder(['billing_email' => 'test@test.com']);
+
+        $ref = new \ReflectionMethod(WebhookDispatcher::class, 'serialize_order');
+        $ref->setAccessible(true);
+
+        $data = $ref->invoke(null, $order);
+
+        $this->assertArrayHasKey('source_type', $data);
+        $this->assertArrayHasKey('device_type_attribution', $data);
+        $this->assertArrayHasKey('session_entry', $data);
+        $this->assertArrayHasKey('session_start_time', $data);
+        $this->assertArrayHasKey('session_pages', $data);
+        $this->assertArrayHasKey('session_duration', $data);
+
+        $this->assertNull($data['source_type']);
+        $this->assertNull($data['device_type_attribution']);
+        $this->assertNull($data['session_entry']);
+        $this->assertNull($data['session_start_time']);
+        $this->assertNull($data['session_pages']);
+        $this->assertNull($data['session_duration']);
+    }
+
+    public function test_serialize_order_session_counters_null_when_non_numeric(): void {
+        $order = new StubWCOrder([
+            'billing_email' => 'test@test.com',
+            'meta' => [
+                '_wc_order_attribution_session_pages'    => '',
+                '_wc_order_attribution_session_duration' => 'not-a-number',
+            ],
+        ]);
+
+        $ref = new \ReflectionMethod(WebhookDispatcher::class, 'serialize_order');
+        $ref->setAccessible(true);
+
+        $data = $ref->invoke(null, $order);
+
+        $this->assertNull($data['session_pages']);
+        $this->assertNull($data['session_duration']);
+    }
+
+    public function test_serialize_order_preserves_existing_utm_keys(): void {
+        // Regression guard: the original five attribution keys are unchanged.
+        $order = new StubWCOrder([
+            'billing_email' => 'test@test.com',
+            'meta' => [
+                '_wc_order_attribution_utm_source'   => 'google',
+                '_wc_order_attribution_utm_medium'   => 'cpc',
+                '_wc_order_attribution_utm_campaign' => 'spring_sale',
+                '_wc_order_attribution_referrer'     => 'https://google.com',
+                '_wc_order_attribution_user_agent'   => 'Mozilla/5.0',
+            ],
+        ]);
+
+        $ref = new \ReflectionMethod(WebhookDispatcher::class, 'serialize_order');
+        $ref->setAccessible(true);
+
+        $data = $ref->invoke(null, $order);
+
+        $this->assertSame('google', $data['utm_source']);
+        $this->assertSame('cpc', $data['utm_medium']);
+        $this->assertSame('spring_sale', $data['utm_campaign']);
+        $this->assertSame('https://google.com', $data['referrer']);
+        $this->assertSame('Mozilla/5.0', $data['user_agent']);
     }
 
     // -----------------------------------------------------------------------

@@ -77,6 +77,8 @@ final class HandshakeClient {
             'wc_mcp_auth_token',
             'wc_mcp_bridge_token_hash',
             'wc_mcp_bridge_secret',
+            'wc_mcp_write_secret',
+            'wc_mcp_write_secret_fp',
             'wc_mcp_connection_mode',
             'wc_mcp_backfill_range',
             'wc_mcp_last_sync_timestamp',

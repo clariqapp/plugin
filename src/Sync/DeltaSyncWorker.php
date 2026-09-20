@@ -102,6 +102,10 @@ final class DeltaSyncWorker {
             return;
         }
 
+        // Refresh the dedicated cloud-write secret so a dashboard rotation
+        // propagates to this site. Best-effort — must never block ingest.
+        \Clariq\McpPlugin\Security\WriteSecretManager::pull();
+
         $since  = self::since_timestamp();
         $offset = 0;
         $total  = 0;
@@ -357,18 +361,18 @@ final class DeltaSyncWorker {
 
         $order_ids_csv = implode(',', $order_ids);
 
+        // Closed allowlist of order-attribution meta keys (5 legacy UTM/referrer
+        // fields + 6 WooCommerce 8.5+ session/attribution fields). Keys are
+        // constants, never wire input, so the IN (...) list is safe to inline.
+        $meta_keys = array_keys(OrderAttribution::META_MAP);
+        $keys_sql  = "'" . implode("','", $meta_keys) . "'";
+
         // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared
         $rows = $wpdb->get_results(
             "SELECT order_id, meta_key, meta_value
              FROM {$wpdb->prefix}wc_orders_meta
              WHERE order_id IN ($order_ids_csv)
-               AND meta_key IN (
-                   '_wc_order_attribution_utm_source',
-                   '_wc_order_attribution_utm_medium',
-                   '_wc_order_attribution_utm_campaign',
-                   '_wc_order_attribution_referrer',
-                   '_wc_order_attribution_user_agent'
-               )",
+               AND meta_key IN ($keys_sql)",
             ARRAY_A
         );
         // phpcs:enable
@@ -377,45 +381,22 @@ final class DeltaSyncWorker {
         foreach ($rows as $row) {
             $order_id = (int) $row['order_id'];
             if (!isset($meta_by_order[$order_id])) {
-                $meta_by_order[$order_id] = [
-                    'utm_source'   => null,
-                    'utm_medium'   => null,
-                    'utm_campaign' => null,
-                    'referrer'     => null,
-                    'user_agent'   => null,
-                ];
+                $meta_by_order[$order_id] = OrderAttribution::null_defaults();
             }
 
             $key = $row['meta_key'];
-            $val = $row['meta_value'];
-
-            if ($key === '_wc_order_attribution_utm_source') {
-                $meta_by_order[$order_id]['utm_source'] = $val;
-            } elseif ($key === '_wc_order_attribution_utm_medium') {
-                $meta_by_order[$order_id]['utm_medium'] = $val;
-            } elseif ($key === '_wc_order_attribution_utm_campaign') {
-                $meta_by_order[$order_id]['utm_campaign'] = $val;
-            } elseif ($key === '_wc_order_attribution_referrer') {
-                $meta_by_order[$order_id]['referrer'] = $val;
-            } elseif ($key === '_wc_order_attribution_user_agent') {
-                $meta_by_order[$order_id]['user_agent'] = $val;
+            if (isset(OrderAttribution::META_MAP[$key])) {
+                $field = OrderAttribution::META_MAP[$key];
+                $meta_by_order[$order_id][$field] = OrderAttribution::normalize($field, $row['meta_value']);
             }
         }
 
         foreach ($orders as &$order) {
-            $id = (int) $order['id'];
-            $meta = $meta_by_order[$id] ?? [
-                'utm_source'   => null,
-                'utm_medium'   => null,
-                'utm_campaign' => null,
-                'referrer'     => null,
-                'user_agent'   => null,
-            ];
-            $order['utm_source']   = $meta['utm_source'];
-            $order['utm_medium']   = $meta['utm_medium'];
-            $order['utm_campaign'] = $meta['utm_campaign'];
-            $order['referrer']     = $meta['referrer'];
-            $order['user_agent']   = $meta['user_agent'];
+            $id   = (int) $order['id'];
+            $meta = $meta_by_order[$id] ?? OrderAttribution::null_defaults();
+            foreach ($meta as $field => $value) {
+                $order[$field] = $value;
+            }
         }
     }
 

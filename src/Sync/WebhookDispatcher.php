@@ -378,6 +378,14 @@ final class WebhookDispatcher {
             'utm_campaign'        => $order->get_meta('_wc_order_attribution_utm_campaign') ?: null,
             'referrer'            => $order->get_meta('_wc_order_attribution_referrer') ?: null,
             'user_agent'          => $order->get_meta('_wc_order_attribution_user_agent') ?: null,
+            // WooCommerce 8.5+ session/attribution meta. Absent on older WC and
+            // for admin/API/POS orders — normalise missing/empty to null.
+            'source_type'             => OrderAttribution::normalize('source_type', $order->get_meta('_wc_order_attribution_source_type')),
+            'device_type_attribution' => OrderAttribution::normalize('device_type_attribution', $order->get_meta('_wc_order_attribution_device_type')),
+            'session_entry'           => OrderAttribution::normalize('session_entry', $order->get_meta('_wc_order_attribution_session_entry')),
+            'session_start_time'      => OrderAttribution::normalize('session_start_time', $order->get_meta('_wc_order_attribution_session_start_time')),
+            'session_pages'           => OrderAttribution::normalize('session_pages', $order->get_meta('_wc_order_attribution_session_pages')),
+            'session_duration'        => OrderAttribution::normalize('session_duration', $order->get_meta('_wc_order_attribution_session_duration')),
             'coupons'             => self::serialize_coupons($order),
             'line_items'          => self::serialize_line_items($order),
         ];

@@ -135,6 +135,10 @@ final class ConnectFlow {
         if (get_option('wc_mcp_connection_mode', 'local_bridge') === 'cloud_sync') {
             \Clariq\McpPlugin\Sync\BackfillWorker::maybe_schedule_backfill();
             \Clariq\McpPlugin\Sync\DeltaSyncWorker::maybe_schedule();
+
+            // Pull the dedicated cloud-write secret over the authed sync channel.
+            // Best-effort — never blocks the connect flow.
+            \Clariq\McpPlugin\Security\WriteSecretManager::pull();
         }
 
         // Redirect to admin page with success flag

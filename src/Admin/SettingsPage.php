@@ -232,6 +232,7 @@ final class SettingsPage {
                         delete_option('wc_mcp_auth_token');
                         delete_option('wc_mcp_bridge_secret');
                         delete_option('wc_mcp_bridge_token_hash');
+                        \Clariq\McpPlugin\Security\WriteSecretManager::clear();
                         // Tear down any in-flight backfill/delta jobs + cursors so
                         // the UI doesn't show a phantom "in progress" backfill or a
                         // stuck pending job after the connection is gone.
@@ -561,6 +562,9 @@ final class SettingsPage {
         delete_option('wc_mcp_bridge_secret');
         delete_option('wc_mcp_bridge_token_hash');
         delete_option('wc_mcp_auth_fail_count');
+
+        // Drop the dedicated cloud-write secret alongside the other credentials.
+        \Clariq\McpPlugin\Security\WriteSecretManager::clear();
 
         // ── Sync state ───────────────────────────────────────────────────────
         // Clear all sync state so a fresh reconnect starts from a clean slate.
