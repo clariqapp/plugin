@@ -47,8 +47,17 @@ composer install
 
 ## Production Packaging
 
-To create a distributable plugin ZIP:
+Release artifacts are built from an explicit allowlist rather than from the working tree. They contain the runtime PHP, GPL and WordPress documentation, the admin UI source and build inputs, and the built admin UI assets. They exclude development dependencies, tests, Docker files, environment files, caches, and all other paths.
+
 ```bash
-npm run build --prefix admin-ui
-zip -r wc-analytics-mcp.zip . -x ".*" -x "docker/*" -x "tests/*" -x "admin-ui/node_modules/*" -x "vendor/*"
+# One-time per checkout: activate the versioned pre-push guard and secret scan.
+npm run hooks:enable
+
+# Resolve the locked admin dependencies, build, verify versions, package, and inspect.
+npm ci --prefix admin-ui
+npm run release:build
 ```
+
+The resulting deterministic artifacts are `dist/wc-analytics-mcp-1.3.0.zip` and its adjacent SHA-256 checksum. The archive has one `wc-analytics-mcp/` root directory and uses normalized timestamps and ordered paths, so repeated packaging of unchanged inputs yields the same archive.
+
+Before a push, the hook runs `gitleaks` against the working tree and blocks direct pushes to `main`. To investigate an already-reviewed scanner false positive locally, `CLARIQ_SKIP_SECRET_SCAN=1` skips only that hook scan; it never bypasses CI or the direct-main safeguard. Do not add broad scanner allowlists—scope any exception to the individual fixture that requires it.

@@ -10,7 +10,7 @@ useDefault = true
 description = "Project-wide allowlists"
 paths = [
   '''\.env\.example$''',
-  '''tests/''',
+  '''^tests/Unit/WriteSecretManagerTest\.php$''',
   '''vendor/''',
   '''admin-ui/node_modules/''',
   '''admin-ui/build/''',

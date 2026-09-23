@@ -1,0 +1,53 @@
+name: Verify plugin
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin-ui/package-lock.json
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+      - name: Install PHP test dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Install locked admin dependencies
+        run: npm ci --prefix admin-ui
+      - name: Verify version metadata
+        run: npm run release:verify
+      - name: Lint admin UI
+        run: npm run lint:js
+      - name: Run unit tests
+        run: npm run test:unit
+      - name: Build, package, and inspect release artifact
+        run: npm run release:build
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_CONFIG: gitleaks.toml
+      - name: Upload verified package
+        uses: actions/upload-artifact@v4
+        with:
+          name: clariq-analytics-mcp-package
+          path: |
+            dist/clariq-analytics-mcp-*.zip
+            dist/clariq-analytics-mcp-*.zip.sha256
+          if-no-files-found: error
