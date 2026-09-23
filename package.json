@@ -5,6 +5,12 @@
   "scripts": {
     "build":            "npm run build --prefix admin-ui",
     "dev":              "npm run dev   --prefix admin-ui",
+    "release:verify":   "python3 scripts/verify_version.py",
+    "release:package":  "python3 scripts/package_plugin.py",
+    "release:inspect":  "python3 scripts/inspect_artifact.py",
+    "release:build":    "npm run build && npm run release:verify && npm run release:package && npm run release:inspect",
+    "security:scan":    "bash scripts/scan_secrets.sh",
+    "hooks:enable":     "bash scripts/enable-githooks.sh",
 
     "env:start":        "wp-env start",
     "env:stop":         "wp-env stop",

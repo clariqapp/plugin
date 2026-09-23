@@ -11,7 +11,11 @@
 # Node & Admin UI build artifacts
 admin-ui/node_modules/
 admin-ui/build/
+/dist/
 *.log
+
+# Local secret scan reports
+.gitleaks-report.*
 
 # OS
 .DS_Store
