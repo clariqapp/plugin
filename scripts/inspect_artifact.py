@@ -10,18 +10,18 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE_ROOT = "wc-analytics-mcp/"
+ARCHIVE_ROOT = "clariq-analytics-mcp/"
 FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 REQUIRED = {
-    "wc-analytics-mcp/wc-analytics-mcp.php",
-    "wc-analytics-mcp/uninstall.php",
-    "wc-analytics-mcp/LICENSE",
-    "wc-analytics-mcp/readme.txt",
-    "wc-analytics-mcp/src/Plugin.php",
-    "wc-analytics-mcp/admin-ui/src/index.js",
-    "wc-analytics-mcp/admin-ui/build/index.js",
-    "wc-analytics-mcp/admin-ui/build/index.asset.php",
-    "wc-analytics-mcp/admin-ui/build/style-index.css",
+    "clariq-analytics-mcp/wc-analytics-mcp.php",
+    "clariq-analytics-mcp/uninstall.php",
+    "clariq-analytics-mcp/LICENSE",
+    "clariq-analytics-mcp/readme.txt",
+    "clariq-analytics-mcp/src/Plugin.php",
+    "clariq-analytics-mcp/admin-ui/src/index.js",
+    "clariq-analytics-mcp/admin-ui/build/index.js",
+    "clariq-analytics-mcp/admin-ui/build/index.asset.php",
+    "clariq-analytics-mcp/admin-ui/build/style-index.css",
 }
 ALLOWED_EXACT = {
     "LICENSE", "README.md", "readme.txt", "uninstall.php", "wc-analytics-mcp.php",
@@ -47,7 +47,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifact", type=Path, nargs="?", help="ZIP to inspect")
     args = parser.parse_args()
-    artifact = args.artifact or ROOT / "dist" / f"wc-analytics-mcp-{expected_version()}.zip"
+    artifact = args.artifact or ROOT / "dist" / f"clariq-analytics-mcp-{expected_version()}.zip"
     if not artifact.is_file():
         print(f"Artifact not found: {artifact}", file=sys.stderr)
         return 1

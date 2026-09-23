@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE_ROOT = "wc-analytics-mcp"
+ARCHIVE_ROOT = "clariq-analytics-mcp"
 FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 EXACT_FILES = (
     "LICENSE",

@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       WooCommerce Analytics MCP
+ * Plugin Name:       Clariq Analytics MCP
  * Plugin URI:        https://clariqapp.com
  * Description:       Connects your WooCommerce store to LLMs via the Model Context Protocol. Supports real-time cloud warehouse sync (Option A) and privacy-first on-premise bridge (Option C).
  * Version:           1.3.0
