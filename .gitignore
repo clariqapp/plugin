@@ -17,6 +17,10 @@ admin-ui/build/
 # Local secret scan reports
 .gitleaks-report.*
 
+# Python release tooling
+__pycache__/
+*.py[cod]
+
 # OS
 .DS_Store
 Thumbs.db
