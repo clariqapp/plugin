@@ -6,7 +6,7 @@ Tested up to: 6.8
 Requires PHP: 8.1
 WC requires at least: 8.0
 WC tested up to: 9.0
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -70,12 +70,19 @@ Yes — the bridge lives under `/wp-json/`, which needs WordPress permalinks ena
 
 == Changelog ==
 
+= 1.3.1 =
+* Automated release packaging and GitHub Release distribution with validated Clariq-branded ZIP artifacts.
+* Updated the plugin display and downloadable package identity to Clariq Analytics MCP.
+
 = 1.3.0 =
 * Local Bridge is now the default mode for fresh installs — self-hosted setup works with no account
 * New "Local Bridge Setup" panel: bridge endpoint, secret reveal/copy/rotate, MCP client config snippet, one-click connection test
 * Added `POST /wc-mcp/v1/bridge/rotate-secret` endpoint
 
 == Upgrade Notice ==
+
+= 1.3.1 =
+Improves release packaging and presents the plugin as Clariq Analytics MCP; existing installations remain compatible.
 
 = 1.3.0 =
 Fresh installs now default to Local Bridge (self-hosted) mode. Existing connected stores are unaffected.
