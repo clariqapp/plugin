@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import stat
 import sys
@@ -22,6 +23,9 @@ REQUIRED = {
     "clariq-analytics-mcp/admin-ui/build/index.js",
     "clariq-analytics-mcp/admin-ui/build/index.asset.php",
     "clariq-analytics-mcp/admin-ui/build/style-index.css",
+    "clariq-analytics-mcp/admin-ui/src/fonts/OFL-InstrumentSans.txt",
+    "clariq-analytics-mcp/admin-ui/src/fonts/OFL-InstrumentSerif.txt",
+    "clariq-analytics-mcp/admin-ui/src/fonts/OFL-JetBrainsMono.txt",
 }
 ALLOWED_EXACT = {
     "LICENSE", "README.md", "readme.txt", "uninstall.php", "wc-analytics-mcp.php",
@@ -83,6 +87,17 @@ def main() -> int:
         print("Artifact inspection failed:", file=sys.stderr)
         print("\n".join(f"- {problem}" for problem in problems), file=sys.stderr)
         return 1
+    if args.artifact is None:
+        stable = ROOT / "dist" / "clariq-analytics-mcp.zip"
+        if not stable.is_file() or stable.read_bytes() != artifact.read_bytes():
+            print("Stable download ZIP is missing or differs from the versioned ZIP.", file=sys.stderr)
+            return 1
+        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        for package in (artifact, stable):
+            checksum = package.with_suffix(package.suffix + ".sha256")
+            if not checksum.is_file() or checksum.read_text(encoding="utf-8") != f"{digest}  {package.name}\n":
+                print(f"Missing or incorrect checksum: {checksum}", file=sys.stderr)
+                return 1
     print(f"Artifact inspection passed: {artifact}")
     return 0
 
