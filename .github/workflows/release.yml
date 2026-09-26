@@ -38,6 +38,8 @@ jobs:
         with:
           name: release-package
           path: |
+            dist/clariq-analytics-mcp.zip
+            dist/clariq-analytics-mcp.zip.sha256
             dist/clariq-analytics-mcp-*.zip
             dist/clariq-analytics-mcp-*.zip.sha256
           if-no-files-found: error
@@ -58,5 +60,7 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
+            dist/clariq-analytics-mcp.zip
+            dist/clariq-analytics-mcp.zip.sha256
             dist/clariq-analytics-mcp-*.zip
             dist/clariq-analytics-mcp-*.zip.sha256

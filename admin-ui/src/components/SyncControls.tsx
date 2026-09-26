@@ -378,17 +378,6 @@ export function SyncControls( {
 							<div>
 								Your history is importing in the background —
 								you can safely leave this page.
-								<span
-									style={ {
-										display: 'block',
-										marginTop: 4,
-										color: 'var(--clq-text-muted)',
-									} }
-								>
-									On local/dev sites, run{ ' ' }
-									<code>wp action-scheduler run</code> to
-									process the queue.
-								</span>
 							</div>
 						</div>
 					) }

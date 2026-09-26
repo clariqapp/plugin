@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
+import shutil
 import stat
 import sys
 import zipfile
@@ -63,7 +64,7 @@ def zip_info(archive_path: str, source: Path) -> zipfile.ZipInfo:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, help="archive path (defaults to dist/wc-analytics-mcp-<version>.zip)")
+    parser.add_argument("--output", type=Path, help="archive path (defaults to dist/clariq-analytics-mcp-<version>.zip)")
     args = parser.parse_args()
     release_version = version()
     output = args.output or ROOT / "dist" / f"{ARCHIVE_ROOT}-{release_version}.zip"
@@ -82,6 +83,13 @@ def main() -> int:
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
     checksum = output.with_suffix(output.suffix + ".sha256")
     checksum.write_text(f"{digest}  {output.name}\n", encoding="utf-8")
+    if args.output is None:
+        latest = ROOT / "dist" / f"{ARCHIVE_ROOT}.zip"
+        shutil.copyfile(output, latest)
+        latest.with_suffix(".zip.sha256").write_text(
+            f"{digest}  {latest.name}\n", encoding="utf-8"
+        )
+        print(f"Created {latest.relative_to(ROOT)}")
     print(f"Created {output.relative_to(ROOT)}")
     print(f"SHA256 {digest}")
     return 0
